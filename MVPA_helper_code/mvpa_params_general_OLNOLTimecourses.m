@@ -5,7 +5,7 @@ function [S idxTr idxTe par]= mvpa_params_general_OLNOLTimecourses(subj_id, task
 
 % NOTE: you MUST edit the condition names every time you change your
 % classification plan in THIS script, but ALSO in the
-% TIB_generate_beta_filenames(S) script - otherwise it will fail
+% generate_conditionlabels_forpatterns(S) script - otherwise it will fail
 
 % example call, existpatmat - TIB_run_mvpa_general({'01'},'OLNOLTimecourses',{[480]},'8080test')
 % this call is NOT run from this function. It is given to
@@ -258,7 +258,7 @@ par.task = task; %assign input from function call. Task phase label. For circmaz
 if strcmp(S.inputformat, 'raw')
     data_imgs_to_use = 'raw_filenames.mat';
 elseif strcmp(S.inputformat, 'betas')
-    data_imgs_to_use = 'beta_filenames.mat'; % analogous to raw_filenames, but with a boolean index for which betas correspond to which conditions. Created by calling TIB_generate_beta_filenames.mat below
+    data_imgs_to_use = 'beta_filenames.mat'; % analogous to raw_filenames, but with a boolean index for which betas correspond to which conditions. Created by calling generate_conditionlabels_forpatterns.mat below
 end
 
 S.preprocType = 'spm'; % 'spm' for spm preprocessing, 'knk' for kendrick preprocessing
@@ -304,7 +304,7 @@ S.group_mvpa_dir = [S.expt_dir 'mvpa_output_files'];%results .mat files are spit
 
 %% identify betas
 if strcmp(S.inputformat, 'betas')%if we are running a beta analysis, take a moment to create "model" files for the beta images
-    TIB_generate_beta_filenames(S);
+    generate_conditionlabels_forpatterns(S);
 end
 
 %% Initialize empty vars to be filled below
