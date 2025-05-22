@@ -29,7 +29,7 @@ function [S idxTr idxTe par]= mvpa_params_general_OLNOLTimecourses(subj_id, task
 %% EDIT - You must establish these general parameters
 
 % ~~~ WHAT IS YOUR *Study name* (code looks for this specific folder) ~~~
-S.exp_name = 'COSPAL_Timecourses'; %change this to flexibly redirect the script to different studies in subdirectories
+S.exp_name = 'OLNOLTimecourses'; %change this to flexibly redirect the script to different studies in subdirectories
 
 % ~~~ WHAT IS YOUR *subject ID/number PREFIX* (code appends this to the
 % front of the sub number provided with the run_mvpa_general function call)
@@ -73,7 +73,7 @@ S.use_premade_workspace = 0;
 %% EDIT - You must establish parameters for this SPECIFIC classification scenario involving the data described in the preceding section
 
 % ~~~ what study conditions or phases do you want to *TRAIN* on?
-S.trainTask = 'OLNewROI4vsNOLNewROI4';% descriptive label for TYPE of classification you want to run (conditions from names/onsets file specified for this below)
+S.trainTask = 'OLNewROI4vsOLNewROI6';% descriptive label for TYPE of classification you want to run (conditions from names/onsets file specified for this below)
 
 % ~~~ what study conditions or phases do you want to *TEST* on?
 % NOTE: if the string here is not the same as S.trainTask, the classifier
@@ -127,7 +127,7 @@ S.testonsfnamebetas =  ['FeatSet_' subj_id{1}  '_namesfile'];
 
 % ~~~ WHAT IS YOUR *computer base path* (where your study and its subfolders
 % live
-S.sbasepath = 'C:/Users/giova/GaTech Dropbox/CoS/Psychology/MAP_Lab/Studies_ONGOING/';
+S.sbasepath = 'C:\Users\giova\Documents\work\';
 
 % ~~~ WHAT IS THE NAME *of your model folder's directory*?
 S.modfold = 'datafolder';
