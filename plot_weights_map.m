@@ -49,7 +49,7 @@ Weights = wtavg;
 % Ytime =   [2 4 6 8 9 9 10  12  13.5 13.5 13.5 13.5 13.5];% *NOTE* odd thing happens at intersections because TRs (2s) might result in the data point "changing direction"
 % Weights = [0	0	0	0  	4.13327738879689  1.11834317582607 	7.09086639926002 	0	   -19.3107810184560	-7.41715436364057	 0 	-1.09228553715279	-1.93034051230980]
 
-%%now shift the weights back 6s (6TRs) - to do this, we delete the LAST
+%%now shift the weights back 6s (3TRs) - to do this, we delete the LAST
 %%three of the X/Y time, and the FIRST three of the Weights
 Xtime =   [0 0 0 0 1 3 4.5 4.5 3.5  1.5  -0.5 -2.5];% *NOTE* odd thing happens at intersections because TRs (2s) might result in the data point "changing direction" 
 Ytime =   [2 4 6 8 9 9 10  12  13.5 13.5 13.5 13.5];% *NOTE* odd thing happens at intersections because TRs (2s) might result in the data point "changing direction"

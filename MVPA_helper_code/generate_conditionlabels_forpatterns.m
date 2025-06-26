@@ -40,6 +40,13 @@ if strcmp(S.trainTask,S.testTask)
     %  bnames{1,1} = 'EA';
     %  bnames{1,2} = 'AA';
     %  bnames{1,3} = 'Scene';
+
+%      betaidx{1,1} = strcmpi('nol_new_roi4',names);
+%      betaidx{1,2} = strcmpi('nol_new_roi5',names);
+%      betaidx{1,3} = strcmpi('nol_new_roi6',names);
+%      bnames{1,1} = 'nol_new_roi4';
+%      bnames{1,2} = 'nol_new_roi5';
+%      bnames{1,3} = 'nol_new_roi6';
     
     %% 5-way... etc are possible (but requre more data to fit!)
     
@@ -75,17 +82,19 @@ if strcmp(S.trainTask,S.testTask)
 else
     
     %% binary
-    betaidx_tr{1,1} = strcmpi('old_new_roi1',names);
+    %%tr > training 
+    %%te > testing
+    betaidx_tr{1,1} = strcmpi('ol_new_roi1',names);
     betaidx_tr{1,2} = strcmpi('nol_new_roi1',names);
     
-    betaidx_te{1,1} = strcmpi('ol_old_roi1',names);
-    betaidx_te{1,2} = strcmpi('nol_old_roi1',names);
+    betaidx_te{1,1} = strcmpi('ol_new_roi2',names);
+    betaidx_te{1,2} = strcmpi('nol_new_roi2',names);
     
     bnames_tr{1,1} = 'ol_new_roi1';
     bnames_tr{1,2} = 'nol_new_roi1';
     
-    bnames_te{1,1} = 'ol_new_roi1';
-    bnames_te{1,2} = 'nol_new_roi1';
+    bnames_te{1,1} = 'ol_new_roi2';
+    bnames_te{1,2} = 'nol_new_roi2';
         
     if S.existpatmat == 0
         allbetafilenames = dir(fullfile(S.mvpa_dir, 'beta*.nii'));
@@ -95,12 +104,12 @@ else
             error('SANITY CHECK: the directory you listed does not have betas OR they have a different extension (e.g. img)')
         end
         
-        for idx = 1:length(betaidx{1,1})%-1%note, we are filling in the beta file names based on how many betas OF INTEREST we have (length(betaidx)). We don't care about the error reg betas for this analysis
+        for idx = 1:length(betaidx_tr{1,1})%-1%note, we are filling in the beta file names based on how many betas OF INTEREST we have (length(betaidx)). We don't care about the error reg betas for this analysis
             beta_filenames{idx,1} = [S.mvpa_dir allbetafilenames(idx).name]; %create the analog to "raw_filenames.mat" - i.e. a list of all filenames including the path
         end
         
     else
-        for idx = 1:length(betaidx{1,1})%-1%note, we are filling in the beta file names based on how many betas OF INTEREST we have (length(betaidx)). We don't care about the error reg betas for this analysis
+        for idx = 1:length(betaidx_tr{1,1})%-1%note, we are filling in the beta file names based on how many betas OF INTEREST we have (length(betaidx)). We don't care about the error reg betas for this analysis
             beta_filenames{idx,1} = [S.mvpa_dir S.datafile]; %create the analog to "raw_filenames.mat" - i.e. a list of all filenames including the path
         end
     end

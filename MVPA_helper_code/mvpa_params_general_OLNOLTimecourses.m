@@ -46,7 +46,7 @@ S.datafile = ['FeatSet_' subj_id{1} '.mat']; % Replaces default function involvi
 S.stbetacount = 480; % NOTE: the code assumes all single trial betas of potential interest are contiguous in the model. If multi-event betas are inteleaved in the .mat model structure, this will need more editing.
 
 % ~~~ WHAT IS YOUR *scan TR in the units of your model file (usually seconds)*
-% NOTE: if working with Betas - if your "onsets" file is really a numerical list of beta numbers instead of onsets, you must set TR = 1.
+% NOTE: if working with Betas or existing pattern matrix - if your "onsets" file is really a numerical list of beta numbers instead of onsets, you must set TR = 1.
 % If your onsets file is in seconds, set this as the TR ***even for Betas***.
 par.TR = 1;
 
@@ -71,6 +71,13 @@ S.use_premade_workspace = 0;
 %par.readimglist = 0; %1=yes, read an existing list; 0 = no, generate on the fly please (slower but recommended).
 
 %% EDIT - You must establish parameters for this SPECIFIC classification scenario involving the data described in the preceding section
+% List of ROIs:
+% ROI1: RSComplex
+% ROI2: RSC (ba2930)
+% ROI3: Hippocampus
+% ROI4: NAcc
+% ROI5: Caudate
+% ROI6: Putamen
 
 % ~~~ what study conditions or phases do you want to *TRAIN* on?
 S.trainTask = 'OLNewROI4vsOLNewROI6';% descriptive label for TYPE of classification you want to run (conditions from names/onsets file specified for this below)
@@ -127,7 +134,7 @@ S.testonsfnamebetas =  ['FeatSet_' subj_id{1}  '_namesfile'];
 
 % ~~~ WHAT IS YOUR *computer base path* (where your study and its subfolders
 % live
-S.sbasepath = 'C:\Users\giova\Documents\work\';
+S.sbasepath = 'D:\POSTDOC_GT\Research Collab Projects\Time courses of Qiliangs prior study\MVPA_Script_with_Pathplot\';
 
 % ~~~ WHAT IS THE NAME *of your model folder's directory*?
 S.modfold = 'datafolder';
@@ -152,9 +159,9 @@ S.num_results_iter = 1; % number of times to run the entire classification proce
 S.num_iter_with_same_data = 1; % number of times to run the classfication step for a given subset of data - useful for non-deterministic cases.
 
 % ~~~ Balancing Parameters
-S.equate_number_of_trials_in_groups = 0; % equate number of trials in conditions
+S.equate_number_of_trials_in_groups = 1; % equate number of trials in conditions
 S.numBalancedParams = 1; % number of parameters to balance across (e.g., both goal location AND cue in Circmaze data). The code currently (12/29/17) only handles two options - 1 (standard; main class type), or 2 (main class type plus a second parameter, specified in a second file).
-S.numBalancedIts = 10; % number of iterations to run, with different randomization for the balancing
+S.numBalancedIts = 100; % number of iterations to run, with different randomization for the balancing
 
 % ~~~ first round of Z-Scoring
 % note: by default (=1) all raw BOLDs and existpatmats should be subjected to a FIRST
@@ -232,7 +239,7 @@ S.class_args.chooseOptimalPenalty = 0; % 1 = yes. cycle through cost parameters 
 S.class_args.penaltyRange = [.001 .005 .01 .05 .1 .5 1 5 10 50 100 500 1000 50000]; % a vector "[]" of cost parameters to cycle through
 S.class_args.nFoldsPenaltySelection = 10; % number of cross validation folds for penalty parameter selection.
 
-S.class_args.penalty = 60; %uncomment if not using optimal penalty. Typical value is 1. If using sample data provided with plmvpaLite, start with 0.000001 to see how minimal regularization harms performance.
+S.class_args.penalty = 100; %uncomment if not using optimal penalty. Typical value is 1. If using sample data provided with plmvpaLite, start with 0.000001 to see how minimal regularization harms performance.
 %establishment
 
 %% Default and auto-generated parameters. **Only change if you must for your specific use case to work**
@@ -357,7 +364,7 @@ end
 
 % S.condsTrain = conditions on which to train
 
-% S.dnCondsTrain = conditions which which to denoise, if denoising is used
+% S.dnCondsTrain = conditions which to denoise, if denoising is used
 
 % S.TrainRuns = runs of data on which to train (this is NOT x-validation -
 % this is selecting subsets of runs pertinent to analysis (assuming not all
@@ -373,6 +380,16 @@ end
 
 % idxTr = behavioral indices for training task, used by TIB_run_MVPA_general
 
+% List of ROIs:
+% ROI1: RSComplex
+% ROI2: RSC (ba2930)
+% ROI3: Hippocampus
+% ROI4: NAcc
+% ROI5: Caudate
+% ROI6: Putamen
+
+%TRAINING:
+%%training new overlapping (OL) vs new non overlapping (NOL)
 if strcmp(S.trainTask,'OLNewROI1vsNOLNewROI1')
     S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
     S.condsTrain = {{'ol_new_roi1'}  {'nol_new_roi1'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
@@ -385,9 +402,20 @@ if strcmp(S.trainTask,'OLNewROI1vsNOLNewROI1')
     S.durTrain = numel(S.filenames_train) * par.TR;
     %[~, idxTr] = fMRIBehAnalysis_Loc(par);
     
-elseif strcmp(S.trainTask,'OLNewROI4vsOLNewROI6')
+elseif strcmp(S.trainTask,'OLNewROI2vsNOLNewROI2')
     S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
-    S.condsTrain = {{'ol_new_roi4'}  {'ol_new_roi6'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.condsTrain = {{'ol_new_roi2'}  {'nol_new_roi2'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    elseif strcmp(S.trainTask,'OLNewROI3vsNOLNewROI3')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi3'}  {'nol_new_roi3'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
     S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
     if strcmp(S.inputformat, 'raw')
         S.filenames_train = raw_filenames;%
@@ -396,9 +424,268 @@ elseif strcmp(S.trainTask,'OLNewROI4vsOLNewROI6')
     end
     S.durTrain = numel(S.filenames_train) * par.TR;
     
+elseif strcmp(S.trainTask,'OLNewROI4vsNOLNewROI4')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi4'}  {'nol_new_roi4'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    elseif strcmp(S.trainTask,'OLNewROI5vsNOLNewROI5')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi5'}  {'nol_new_roi5'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+     elseif strcmp(S.trainTask,'OLNewROI5vsOLOldROI5')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi5'}  {'ol_old_roi5'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+elseif strcmp(S.trainTask,'OLNewROI6vsNOLNewROI6')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi6'}  {'nol_new_roi6'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    %Hippocampus vs Striatum
+    %%OL
+    elseif strcmp(S.trainTask,'OLNewROI3vsOLNewROI4')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi3'}  {'ol_new_roi4'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    elseif strcmp(S.trainTask,'OLNewROI3vsOLNewROI5')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi3'}  {'ol_new_roi5'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    elseif strcmp(S.trainTask,'OLNewROI3vsOLNewROI6')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi3'}  {'ol_new_roi6'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    %%NOL
+    elseif strcmp(S.trainTask,'NOLNewROI3vsNOLNewROI4')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'nol_new_roi3'}  {'nol_new_roi4'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    elseif strcmp(S.trainTask,'NOLNewROI3vsNOLNewROI5')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'nol_new_roi3'}  {'nol_new_roi5'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    elseif strcmp(S.trainTask,'NOLNewROI3vsNOLNewROI6')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'nol_new_roi3'}  {'nol_new_roi6'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+   end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+%Striatum > 3-way: NAcc vs Caudate vs Putamen
+    %%OL
+    elseif strcmp(S.trainTask,'OLNewROI4vsOLNewROI5vsOLNewROI6')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi4'} {'ol_new_roi5'} {'ol_new_roi6'}};%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    %%NOL
+    elseif strcmp(S.trainTask,'NOLNewROI4vsNOLNewROI5vsNOLNewROI6')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'nol_new_roi4'} {'nol_new_roi5'} {'nol_new_roi6'}};%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+
+    %% NAcc vs Ca
+    %%OL
+ elseif strcmp(S.trainTask,'OLNewROI4vsOLNewROI5')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi4'} {'ol_new_roi5'}};%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+   %%NOL
+ elseif strcmp(S.trainTask,'NOLNewROI4vsNOLNewROI5')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'nol_new_roi4'} {'nol_new_roi5'}};%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+     %% NAcc vs Putamen
+    %%OL
+ elseif strcmp(S.trainTask,'OLNewROI4vsOLNewROI6')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi4'} {'ol_new_roi6'}};%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    %%NOL
+ elseif strcmp(S.trainTask,'NOLNewROI4vsNOLNewROI6')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'nol_new_roi4'} {'nol_new_roi6'}};%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    %% Caudate vs Putamen
+    %%OL
+ elseif strcmp(S.trainTask,'OLNewROI5vsOLNewROI6')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi5'} {'ol_new_roi6'}};%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    %%NOL
+ elseif strcmp(S.trainTask,'NOLNewROI5vsNOLNewROI6')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'nol_new_roi5'} {'nol_new_roi6'}};%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+
+    %RSComplex vs RSC:
+    %%comparing ROI1 vs ROI2 performance in OL mazes
+     %%OL
+    elseif strcmp(S.trainTask,'OLNewROI1vsOLNewROI2')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi1'} {'ol_new_roi2'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    %%comparing ROI1 vs ROI2 performance in NOL mazes
+     %%NOL
+    elseif strcmp(S.trainTask,'NOLNewROI1vsNOLNewROI2')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'nol_new_roi1'} {'nol_new_roi2'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
 end
 
+     %RSComplex vs RSC: training on ROI1 > testing n ROI2
+      %%OL vs NOL in ROI1- RSComplex (tested in ROI2- RSC)
+
+%     %already run by TIB -probe1
+%     elseif strcmp(S.trainTask,'OLNewROI4vsOLNewROI6')
+%     S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+%     S.condsTrain = {{'ol_new_roi4'}  {'ol_new_roi6'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+%     S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+%     if strcmp(S.inputformat, 'raw')
+%         S.filenames_train = raw_filenames;%
+%     elseif strcmp(S.inputformat, 'betas')
+%         S.filenames_train = beta_filenames;%
+%     end
+%     S.durTrain = numel(S.filenames_train) * par.TR;
+% end
+
 % testing - this defines the testing set. The code is set up this way to enable us to step outside xval if desired to test on different set of data (e.g., at retrieval)
+%TESTING
+%%testing new overlapping (OL) vs new non overlapping (NOL)
 if strcmp(S.testTask,'OLNewROI1vsNOLNewROI1')
     S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
     S.condsTest = {{'ol_new_roi1'} {'nol_new_roi1'}};
@@ -412,7 +699,212 @@ if strcmp(S.testTask,'OLNewROI1vsNOLNewROI1')
     S.durTest = numel(S.filenames_test) * par.TR;
     %[~, idxTe] = fMRIBehAnalysis_Loc(par);
     
-elseif strcmp(S.testTask,'OLNewROI4vsOLNewROI6')
+elseif strcmp(S.testTask,'OLNewROI2vsNOLNewROI2')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi2'} {'nol_new_roi2'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    elseif strcmp(S.testTask,'OLNewROI3vsNOLNewROI3')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi3'} {'nol_new_roi3'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+       
+
+elseif strcmp(S.testTask,'OLNewROI4vsNOLNewROI4')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi4'} {'nol_new_roi4'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    elseif strcmp(S.testTask,'OLNewROI5vsNOLNewROI5')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi5'} {'nol_new_roi5'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    elseif strcmp(S.testTask,'OLNewROI5vsOLOldROI5')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi5'} {'ol_old_roi5'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+elseif strcmp(S.testTask,'OLNewROI6vsNOLNewROI6')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi6'} {'nol_new_roi6'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    %Hippocampus vs Striatum
+    %%OL comparisons
+    elseif strcmp(S.testTask,'OLNewROI3vsOLNewROI4')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi3'} {'ol_new_roi4'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    elseif strcmp(S.testTask,'OLNewROI3vsOLNewROI5')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi3'} {'ol_new_roi5'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    elseif strcmp(S.testTask,'OLNewROI3vsOLNewROI6')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi3'} {'ol_new_roi6'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    %%NOL comparisons
+    elseif strcmp(S.testTask,'NOLNewROI3vsNOLNewROI4')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'nol_new_roi3'} {'nol_new_roi4'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    elseif strcmp(S.testTask,'NOLNewROI3vsNOLNewROI5')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'nol_new_roi3'} {'nol_new_roi5'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    elseif strcmp(S.testTask,'NOLNewROI3vsNOLNewROI6')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'nol_new_roi3'} {'nol_new_roi6'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    %Striatum > 3-way: NAcc vs Caudate vs Putamen
+    %%OL
+     elseif strcmp(S.testTask,'OLNewROI4vsOLNewROI5vsOLNewROI6')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi4'} {'ol_new_roi5'} {'ol_new_roi6'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    %%NOL
+     elseif strcmp(S.testTask,'NOLNewROI4vsNOLNewROI5vsNOLNewROI6')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'nol_new_roi4'} {'nol_new_roi5'} {'nol_new_roi6'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+     
+    %% NAcc vs Ca
+    %%OL
+    elseif strcmp(S.testTask,'OLNewROI4vsOLNewROI5')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi4'} {'ol_new_roi5'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+   
+    %%NOL
+    elseif strcmp(S.testTask,'NOLNewROI4vsNOLNewROI5')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'nol_new_roi4'} {'nol_new_roi5'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    %% NAcc vs Putamen
+    %%OL
+    elseif strcmp(S.testTask,'OLNewROI4vsOLNewROI6')
     S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
     S.condsTest = {{'ol_new_roi4'} {'ol_new_roi6'}};
     S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
@@ -423,11 +915,109 @@ elseif strcmp(S.testTask,'OLNewROI4vsOLNewROI6')
         S.filenames_test = beta_filenames;%
     end
     S.durTest = numel(S.filenames_test) * par.TR;
-       
+   
+    %%NOL
+    elseif strcmp(S.testTask,'NOLNewROI4vsNOLNewROI6')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'nol_new_roi4'} {'nol_new_roi6'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+     %% Caudate vs Putamen
+    %%OL
+     elseif strcmp(S.testTask,'OLNewROI5vsOLNewROI6')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi5'} {'ol_new_roi6'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+     %%NOL
+    elseif strcmp(S.testTask,'NOLNewROI5vsNOLNewROI6')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'nol_new_roi5'} {'nol_new_roi6'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    %RSComplex vs RSC:
+    %%comparing ROI1 vs ROI2 performance in OL mazes
+     %%OL
+     elseif strcmp(S.testTask,'OLNewROI1vsOLNewROI2')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi1'} {'ol_new_roi2'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    %%comparing ROI1 vs ROI2 performance in NOL mazes
+     %%NOL
+     elseif strcmp(S.testTask,'NOLNewROI1vsNOLNewROI2')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'nol_new_roi1'} {'nol_new_roi2'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
 end
 
-S.condnames = S.condsTrain;
-S.regName = 'conds';
+ S.condnames = S.condsTrain;
+ S.regName = 'conds';
+
+%%NOL
+%      elseif strcmp(S.testTask,'NOLNewROI1vsNOLNewROI2')
+%     S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+%     S.condsTest = {{'nol_new_roi1'}{'nol_new_roi2'}};
+%     S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+%     S.TestRuns = par.scansSelect.(par.task).loc;
+%     if strcmp(S.inputformat, 'raw')
+%         S.filenames_test = raw_filenames;%
+%     elseif strcmp(S.inputformat, 'betas')
+%         S.filenames_test = beta_filenames;%
+%     end
+%     S.durTest = numel(S.filenames_test) * par.TR;
+
+
+    %already run by TIB - probe1
+%     elseif strcmp(S.testTask,'OLNewROI4vsOLNewROI6')
+%     S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+%     S.condsTest = {{'ol_new_roi4'} {'ol_new_roi6'}};
+%     S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+%     S.TestRuns = par.scansSelect.(par.task).loc;
+%     if strcmp(S.inputformat, 'raw')
+%         S.filenames_test = raw_filenames;%
+%     elseif strcmp(S.inputformat, 'betas')
+%         S.filenames_test = beta_filenames;%
+%     end
+%     S.durTest = numel(S.filenames_test) * par.TR;
+% end
+% 
+
 
 
 %% Smoothing Parameters - ******************integrate with switch mode above
