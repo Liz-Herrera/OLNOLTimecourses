@@ -134,7 +134,7 @@ S.testonsfnamebetas =  ['FeatSet_' subj_id{1}  '_namesfile'];
 
 % ~~~ WHAT IS YOUR *computer base path* (where your study and its subfolders
 % live
-S.sbasepath = 'D:\POSTDOC_GT\Research Collab Projects\Time courses of Qiliangs prior study\MVPA_Script_with_Pathplot\';
+S.sbasepath = 'C:\Users\ellave3\Documents\GitHub\';
 
 % ~~~ WHAT IS THE NAME *of your model folder's directory*?
 S.modfold = 'datafolder';
