@@ -80,7 +80,7 @@ S.use_premade_workspace = 0;
 % ROI6: Putamen
 
 %% ~~~ what study conditions or phases do you want to *TRAIN* on?
-S.trainTask = 'OLNewROI2vsNOLNewROI2';% descriptive label for TYPE of classification you want to run (conditions from names/onsets file specified for this below)
+S.trainTask = 'OLNewROI1vsNOLNewROI1';% descriptive label for TYPE of classification you want to run (conditions from names/onsets file specified for this below)
 
 %% ~~~ what study conditions or phases do you want to *TEST* on?
 % NOTE: if the string here is not the same as S.trainTask, the classifier
@@ -89,7 +89,7 @@ S.trainTask = 'OLNewROI2vsNOLNewROI2';% descriptive label for TYPE of classifica
 % difference between one set of conditions is "represented" in a different
 % set of conditions (e.g., can OLNew vs NOLNew activity difference be used
 % to distinguish OLOld vs NOLOld [i.e., do the New and Old conditions have similar patterns?]?)
-S.testTask = 'OLNewROI3vsNOLNewROI3';
+S.testTask = 'OLNewROI2vsNOLNewROI2';
 
 % ~~~ what cross-validation procedure do you want? *ignored if S.testTask
 % and S.trainTask are not the same
@@ -106,8 +106,6 @@ S.nFolds = 480; % number of cross validation iterations - only used for nFold (a
 % subject ID in front of this. Edit as appropriate
 S.trainonsfnamebetas =  ['FeatSet_' subj_id{1}  '_namesfile'];
 S.testonsfnamebetas =  ['FeatSet_' subj_id{1}  '_namesfile'];
-
-
 
 
 %% IGNORE - unused for this
@@ -155,7 +153,7 @@ par.boldrundirpfx = 'run_';
 %% EDIT - Classifier tuning and various settings
 
 % ~~~ Iteration Parameters
-S.num_results_iter = 1; % number of times to run the entire classification process (select subset of the data and train/test classifier)
+S.num_results_iter = 1; % number of times to run the entire classification process (select subset of the data and train/test classifier) %1-no scrambling/1000(scrambling is on)
 S.num_iter_with_same_data = 1; % number of times to run the classfication step for a given subset of data - useful for non-deterministic cases.
 
 % ~~~ Balancing Parameters
@@ -220,7 +218,7 @@ end
 % ~~~ Special types of analysis
 S.searchlightAnalysis = 0; % run a searchlight analysis
 %S.linReg = 0; % run an analysis with a continuous outcome variable
-S.scrambleregs = 1; % run an anlysis with the class labels scrambled on a run-by-run basis.
+S.scrambleregs = 0; % run an anlysis with the class labels scrambled on a run-by-run basis.
 
 % ~~~ classifier parameters
 S.class_args.train_funct_name = 'train_liblinear_multiclass';%'train_pLR';   %training function

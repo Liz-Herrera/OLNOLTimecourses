@@ -83,7 +83,7 @@ S.use_premade_workspace = 0;
 % ROI6: Putamen
 
 %% ~~~ what study conditions or phases do you want to *TRAIN* on?
-S.trainTask = 'NOLNewROI5LatevsNOLNewLateROI6';% descriptive label for TYPE of classification you want to run (conditions from names/onsets file specified for this below)
+S.trainTask = 'OL_New_Late_ROI1vsNOL_New_Late_ROI1';% descriptive label for TYPE of classification you want to run (conditions from names/onsets file specified for this below)
 
 %% ~~~ what study conditions or phases do you want to *TEST* on?
 % NOTE: if the string here is not the same as S.trainTask, the classifier
@@ -92,7 +92,7 @@ S.trainTask = 'NOLNewROI5LatevsNOLNewLateROI6';% descriptive label for TYPE of c
 % difference between one set of conditions is "represented" in a different
 % set of conditions (e.g., can OLNew vs NOLNew activity difference be used
 % to distinguish OLOld vs NOLOld [i.e., do the New and Old conditions have similar patterns?]?)
-S.testTask = 'NOLNewROI5LatevsNOLNewLateROI6';
+S.testTask = 'OL_New_Late_ROI2vsNOL_New_Late_ROI2';
 
 % ~~~ what cross-validation procedure do you want? *ignored if S.testTask
 % and S.trainTask are not the same
@@ -157,11 +157,11 @@ par.boldrundirpfx = 'run_';
 
 %% EDIT - Classifier tuning and various settings
 % ~~~ Iteration Parameters
-S.num_results_iter = 1; % number of times to run the entire classification process (select subset of the data and train/test classifier)
+S.num_results_iter = 1000; % number of times to run the entire classification process (select subset of the data and train/test classifier)
 S.num_iter_with_same_data = 1; % number of times to run the classfication step for a given subset of data - useful for non-deterministic cases.
 
 % ~~~ Balancing Parameters
-S.equate_number_of_trials_in_groups = 1; % equate number of trials in conditions
+S.equate_number_of_trials_in_groups = 0; % equate number of trials in conditions
 S.numBalancedParams = 1; % number of parameters to balance across (e.g., both goal location AND cue in Circmaze data). The code currently (12/29/17) only handles two options - 1 (standard; main class type), or 2 (main class type plus a second parameter, specified in a second file).
 S.numBalancedIts = 100; % number of iterations to run, with different randomization for the balancing
 
@@ -222,7 +222,7 @@ end
 % ~~~ Special types of analysis
 S.searchlightAnalysis = 0; % run a searchlight analysis
 %S.linReg = 0; % run an analysis with a continuous outcome variable
-S.scrambleregs = 0; % run an anlysis with the class labels scrambled on a run-by-run basis.
+S.scrambleregs = 1; % run an anlysis with the class labels scrambled on a run-by-run basis.
 
 % ~~~ classifier parameters
 S.class_args.train_funct_name = 'train_liblinear_multiclass';%'train_pLR';   %training function

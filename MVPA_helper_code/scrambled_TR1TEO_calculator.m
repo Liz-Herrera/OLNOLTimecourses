@@ -2,7 +2,7 @@
 
 %accuracy calculator by subject
 
-featureset = 1; % change to 1 or 2 depending on the results you want to analyze (1= all trials, 2=early/late)
+featureset = 2; % change to 1 or 2 depending on the results you want to analyze (1= all trials, 2=early/late)
 % 
 % %first, read in performance for every test
 scrambledAcc= [];
@@ -36,7 +36,7 @@ perfsData = [perfsCounter.uniqueValues, perfsCounter.counts]; % perfsData return
 sortedPerfsData = sortrows(perfsData, -1);
 
 % --- Define your target value ---
-targetVal = 0.525;  % change this to any accuracy threshold = the "real" tr1teo totasl_perf/accuracy value without scrambling
+targetVal = 0.45;  % change this to any accuracy threshold = the "real" tr1teo totasl_perf/accuracy value without scrambling
 
 % --- Find all values >= target ---
 higherIdx = sortedPerfsData(:,1) >= targetVal;

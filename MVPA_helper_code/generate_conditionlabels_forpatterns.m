@@ -84,17 +84,17 @@ else
     %% binary
     %%tr > training 
     %%te > testing
-    betaidx_tr{1,1} = strcmpi('ol_new_roi2',names);
-    betaidx_tr{1,2} = strcmpi('nol_new_roi2',names);
+    betaidx_tr{1,1} = strcmpi('ol_new_roi1',names);
+    betaidx_tr{1,2} = strcmpi('nol_new_roi1',names);
     
-    betaidx_te{1,1} = strcmpi('ol_new_roi3',names);
-    betaidx_te{1,2} = strcmpi('nol_new_roi3',names);
+    betaidx_te{1,1} = strcmpi('ol_new_roi2',names);
+    betaidx_te{1,2} = strcmpi('nol_new_roi2',names);
     
-    bnames_tr{1,1} = 'ol_new_roi2';
-    bnames_tr{1,2} = 'nol_new_roi2';
+    bnames_tr{1,1} = 'ol_new_roi1';
+    bnames_tr{1,2} = 'nol_new_roi1';
     
-    bnames_te{1,1} = 'ol_new_roi3';
-    bnames_te{1,2} = 'nol_new_roi3';
+    bnames_te{1,1} = 'ol_new_roi2';
+    bnames_te{1,2} = 'nol_new_roi2';
         
     if S.existpatmat == 0
         allbetafilenames = dir(fullfile(S.mvpa_dir, 'beta*.nii'));
