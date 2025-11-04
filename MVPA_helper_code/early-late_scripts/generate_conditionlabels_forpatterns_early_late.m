@@ -28,11 +28,12 @@ if strcmp(S.trainTask,S.testTask)
     %should have 29 1s in the goal_1 idx cell
        
     %% binary classification example
-    betaidx{1,1} = strcmpi('nol_new_roi5',names);
-    betaidx{1,2} = strcmpi('nol_new_roi6',names);
-    bnames{1,1} = 'nol_new_roi5';
-    bnames{1,2} = 'nol_new_roi6';
-
+    %% for n-fold cross-validation
+     betaidx{1,1} = strcmpi('nol_new_late_roi5',names);
+     betaidx{1,2} = strcmpi('nol_new_late_roi6',names);
+     bnames{1,1} = 'nol_new_late_roi5';
+     bnames{1,2} = 'nol_new_late_roi6';
+ 
     %% 3-way classification example
     % betaidx{1,1} = strcmpi('EA',names);
     % betaidx{1,2} = strcmpi('AA',names);
@@ -79,22 +80,24 @@ if strcmp(S.trainTask,S.testTask)
     save(savename_betafnms, 'beta_filenames');
     
 %% if we are training the model on one set of conditions but testing it on a different set (very useful, but less common)
+%% TR1TEO: test in 1 data set and test in another
 else
     
     %% binary
+    %% TR1TEO: train in one data set and test in a different one 
     %%tr > training 
     %%te > testing
-    betaidx_tr{1,1} = strcmpi('ol_new_roi1',names);
-    betaidx_tr{1,2} = strcmpi('nol_new_roi1',names);
+    betaidx_tr{1,1} = strcmpi('ol_new_late_roi1',names);
+    betaidx_tr{1,2} = strcmpi('nol_new_late_roi1',names);
     
-    betaidx_te{1,1} = strcmpi('ol_new_roi2',names);
-    betaidx_te{1,2} = strcmpi('nol_new_roi2',names);
+    betaidx_te{1,1} = strcmpi('ol_new_late_roi3',names);
+    betaidx_te{1,2} = strcmpi('nol_new_late_roi3',names);
     
-    bnames_tr{1,1} = 'ol_new_roi1';
-    bnames_tr{1,2} = 'nol_new_roi1';
+    bnames_tr{1,1} = 'ol_new_late_roi1';
+    bnames_tr{1,2} = 'nol_new_late_roi1';
     
-    bnames_te{1,1} = 'ol_new_roi2';
-    bnames_te{1,2} = 'nol_new_roi2';
+    bnames_te{1,1} = 'ol_new_late_roi3';
+    bnames_te{1,2} = 'nol_new_late_roi3';
         
     if S.existpatmat == 0
         allbetafilenames = dir(fullfile(S.mvpa_dir, 'beta*.nii'));

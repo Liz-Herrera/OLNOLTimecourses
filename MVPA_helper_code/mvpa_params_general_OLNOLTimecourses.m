@@ -79,17 +79,17 @@ S.use_premade_workspace = 0;
 % ROI5: Caudate
 % ROI6: Putamen
 
-% ~~~ what study conditions or phases do you want to *TRAIN* on?
-S.trainTask = 'OLNewROI4vsOLNewROI6';% descriptive label for TYPE of classification you want to run (conditions from names/onsets file specified for this below)
+%% ~~~ what study conditions or phases do you want to *TRAIN* on?
+S.trainTask = 'OLNewROI2vsNOLNewROI2';% descriptive label for TYPE of classification you want to run (conditions from names/onsets file specified for this below)
 
-% ~~~ what study conditions or phases do you want to *TEST* on?
+%% ~~~ what study conditions or phases do you want to *TEST* on?
 % NOTE: if the string here is not the same as S.trainTask, the classifier
 % will switch to a 'tr1teo' procedure (train one phase, test on the other).
 % When would tr1teo be useful? e.g., if you want to test how well the
 % difference between one set of conditions is "represented" in a different
 % set of conditions (e.g., can OLNew vs NOLNew activity difference be used
 % to distinguish OLOld vs NOLOld [i.e., do the New and Old conditions have similar patterns?]?)
-S.testTask = 'OLNewROI4vsOLNewROI6';
+S.testTask = 'OLNewROI3vsNOLNewROI3';
 
 % ~~~ what cross-validation procedure do you want? *ignored if S.testTask
 % and S.trainTask are not the same
@@ -134,7 +134,7 @@ S.testonsfnamebetas =  ['FeatSet_' subj_id{1}  '_namesfile'];
 
 % ~~~ WHAT IS YOUR *computer base path* (where your study and its subfolders
 % live
-S.sbasepath = 'C:\Users\ellave3\Documents\GitHub\';
+S.sbasepath = 'C:\Users\ellave3\OneDrive - Georgia Institute of Technology\Documents\GitHub\';
 
 % ~~~ WHAT IS THE NAME *of your model folder's directory*?
 S.modfold = 'datafolder';
@@ -220,7 +220,7 @@ end
 % ~~~ Special types of analysis
 S.searchlightAnalysis = 0; % run a searchlight analysis
 %S.linReg = 0; % run an analysis with a continuous outcome variable
-S.scrambleregs = 0; % run an anlysis with the class labels scrambled on a run-by-run basis.
+S.scrambleregs = 1; % run an anlysis with the class labels scrambled on a run-by-run basis.
 
 % ~~~ classifier parameters
 S.class_args.train_funct_name = 'train_liblinear_multiclass';%'train_pLR';   %training function
@@ -653,6 +653,34 @@ elseif strcmp(S.trainTask,'OLNewROI6vsNOLNewROI6')
     end
     S.durTrain = numel(S.filenames_train) * par.TR;
 
+     %% RSComplex vs Hippocampus:
+    %% Comparing ROI1 vs ROI3 performance in OL mazes
+     %%OL
+    elseif strcmp(S.trainTask,'OLNewROI1vsOLNewROI3')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi1'} {'ol_new_roi3'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    %% RSC vs Hippocampus:
+    %% Comparing ROI2 vs ROI3 performance in OL mazes
+     %%OL
+    elseif strcmp(S.trainTask,'OLNewROI2vsOLNewROI3')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'ol_new_roi2'} {'ol_new_roi3'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
     %%comparing ROI1 vs ROI2 performance in NOL mazes
      %%NOL
     elseif strcmp(S.trainTask,'NOLNewROI1vsNOLNewROI2')
@@ -665,7 +693,12 @@ elseif strcmp(S.trainTask,'OLNewROI6vsNOLNewROI6')
         S.filenames_train = beta_filenames;%
     end
     S.durTrain = numel(S.filenames_train) * par.TR;
-end
+
+    %% RSComplex vs Hippocampus: training on ROI1 > testing n ROI3
+      %%OL vs NOL in ROI1- RSComplex (tested in ROI3- HP)
+      %training line 393 and testing line 775
+      %done for RSC vs Hippocampus as well
+
 
      %RSComplex vs RSC: training on ROI1 > testing n ROI2
       %%OL vs NOL in ROI1- RSComplex (tested in ROI2- RSC)
@@ -683,6 +716,35 @@ end
 %     S.durTrain = numel(S.filenames_train) * par.TR;
 % end
 
+%% RSComplex vs Hippocampus:
+    %% Comparing ROI1 vs ROI3 performance in NOL mazes
+    %% NOL
+    elseif strcmp(S.trainTask,'NOLNewROI1vsNOLNewROI3')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'nol_new_roi1'} {'nol_new_roi3'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+    %% RSC vs Hippocampus:
+    %% Comparing ROI2 vs ROI3 performance in NOL mazes
+     %%NOL
+    elseif strcmp(S.trainTask,'NOLNewROI2vsNOLNewROI3')
+    S.onsetsTrainDir = [S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTrain = {{'nol_new_roi2'} {'nol_new_roi3'}} ;%corresponds to the names in the onsets.mat or betas_idx.mat files. This is used to select what is being compared with what.
+    S.TrainRuns = par.scansSelect.(par.task).loc;%pull up indexing, defined above, for RUNS corresponding to task of interest (i.e. if runs 2,4,6 correspond to task 1)
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_train = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_train = beta_filenames;%
+    end
+    S.durTrain = numel(S.filenames_train) * par.TR;
+
+end    
 % testing - this defines the testing set. The code is set up this way to enable us to step outside xval if desired to test on different set of data (e.g., at retrieval)
 %TESTING
 %%testing new overlapping (OL) vs new non overlapping (NOL)
@@ -971,6 +1033,36 @@ elseif strcmp(S.testTask,'OLNewROI6vsNOLNewROI6')
     end
     S.durTest = numel(S.filenames_test) * par.TR;
 
+     %% RSComplex vs Hippocampus:
+    %%comparing ROI1 vs ROI3 performance in OL mazes
+     %%OL
+     elseif strcmp(S.testTask,'OLNewROI1vsOLNewROI3')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi1'} {'ol_new_roi3'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    %% RSC vs Hippocampus:
+    %%comparing ROI2 vs ROI3 performance in OL mazes
+     %%OL
+     elseif strcmp(S.testTask,'OLNewROI2vsOLNewROI3')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'ol_new_roi2'} {'ol_new_roi3'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
     %%comparing ROI1 vs ROI2 performance in NOL mazes
      %%NOL
      elseif strcmp(S.testTask,'NOLNewROI1vsNOLNewROI2')
@@ -984,8 +1076,39 @@ elseif strcmp(S.testTask,'OLNewROI6vsNOLNewROI6')
         S.filenames_test = beta_filenames;%
     end
     S.durTest = numel(S.filenames_test) * par.TR;
+
+    %RSComplex vs Hippocampus:
+    %%comparing ROI1 vs ROI3 performance in NOL mazes
+     %% NOL
+     elseif strcmp(S.testTask,'NOLNewROI1vsNOLNewROI3')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'nol_new_roi1'} {'nol_new_roi3'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
+
+    %RSC vs Hippocampus:
+    %%comparing ROI2 vs ROI3 performance in NOL mazes
+     %% NOL
+     elseif strcmp(S.testTask,'NOLNewROI2vsNOLNewROI3')
+    S.onsetsTestDir =[S.mvpa_dir];%directory containing onsets.mat or betas_idx.mat file to be loaded in
+    S.condsTest = {{'nol_new_roi2'} {'nol_new_roi3'}};
+    S.nwayclass = num2str(numel(S.condsTest));%stores the number classification dimensions just for reference (i.e. is this a 5-way or a 2-way/binary classification?)
+    S.TestRuns = par.scansSelect.(par.task).loc;
+    if strcmp(S.inputformat, 'raw')
+        S.filenames_test = raw_filenames;%
+    elseif strcmp(S.inputformat, 'betas')
+        S.filenames_test = beta_filenames;%
+    end
+    S.durTest = numel(S.filenames_test) * par.TR;
 end
 
+%% renaming variables
  S.condnames = S.condsTrain;
  S.regName = 'conds';
 

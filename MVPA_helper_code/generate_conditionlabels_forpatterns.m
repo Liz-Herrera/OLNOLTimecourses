@@ -28,11 +28,11 @@ if strcmp(S.trainTask,S.testTask)
     %should have 29 1s in the goal_1 idx cell
        
     %% binary classification example
-    betaidx{1,1} = strcmpi('ol_new_roi4',names);
-    betaidx{1,2} = strcmpi('ol_new_roi6',names);
-    bnames{1,1} = 'ol_new_roi4';
-    bnames{1,2} = 'ol_new_roi6';
-
+    % betaidx{1,1} = strcmpi('ol_new_roi2',names);
+    % betaidx{1,2} = strcmpi('ol_new_roi3',names);
+    % bnames{1,1} = 'ol_new_roi2';
+    % bnames{1,2} = 'ol_new_roi3';
+ 
     %% 3-way classification example
     % betaidx{1,1} = strcmpi('EA',names);
     % betaidx{1,2} = strcmpi('AA',names);
@@ -84,17 +84,17 @@ else
     %% binary
     %%tr > training 
     %%te > testing
-    betaidx_tr{1,1} = strcmpi('ol_new_roi1',names);
-    betaidx_tr{1,2} = strcmpi('nol_new_roi1',names);
+    betaidx_tr{1,1} = strcmpi('ol_new_roi2',names);
+    betaidx_tr{1,2} = strcmpi('nol_new_roi2',names);
     
-    betaidx_te{1,1} = strcmpi('ol_new_roi2',names);
-    betaidx_te{1,2} = strcmpi('nol_new_roi2',names);
+    betaidx_te{1,1} = strcmpi('ol_new_roi3',names);
+    betaidx_te{1,2} = strcmpi('nol_new_roi3',names);
     
-    bnames_tr{1,1} = 'ol_new_roi1';
-    bnames_tr{1,2} = 'nol_new_roi1';
+    bnames_tr{1,1} = 'ol_new_roi2';
+    bnames_tr{1,2} = 'nol_new_roi2';
     
-    bnames_te{1,1} = 'ol_new_roi2';
-    bnames_te{1,2} = 'nol_new_roi2';
+    bnames_te{1,1} = 'ol_new_roi3';
+    bnames_te{1,2} = 'nol_new_roi3';
         
     if S.existpatmat == 0
         allbetafilenames = dir(fullfile(S.mvpa_dir, 'beta*.nii'));
