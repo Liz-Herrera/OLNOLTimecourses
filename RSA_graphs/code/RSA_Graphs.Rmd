@@ -2134,7 +2134,7 @@ ggplot(plot_HC_RSC_Complex_late_NOL,
   # Labels
   labs(x = "Hall",
        y = "Representational similarity (r)",
-       title = "(2a) NOL LATE HC vs RSC vs RScomplex",
+       title = "(2a) NOL LATE HC vs RSC vs RSComplex",
        #subtitle = "(2a) OL EARLY HCvsRSC",
        color = "ROI",
        fill = "ROI") +
@@ -2142,6 +2142,12 @@ ggplot(plot_HC_RSC_Complex_late_NOL,
   # Clean theme
   theme_classic(base_size = 14)
 ```
+**************************
+**************************
+**************************
+THE CODE RUNS BUT DOESN'T PRODUCE ANY PLOTS BELOW THIS LINE
+This is the last one: title = "(2a) NOL LATE HC vs RSC vs RSComplex",
+
 **************************
 HC vs RSComplex
 **************************
@@ -3687,6 +3693,14 @@ run_full_paired_tests <- function(data, LearningStage_label) {
     )
 }
 
+```
+Data table
+
+```{r}
+early_results <- run_full_paired_tests(early_wide, "Early")
+late_results  <- run_full_paired_tests(late_wide,  "Late")
+
+final_results_RSComplex <- bind_rows(early_results, late_results)`{r}
 ```
 # PLOTTING all 3 ROIs together EARLY
 a) Data frame rearranged
