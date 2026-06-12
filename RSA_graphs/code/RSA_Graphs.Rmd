@@ -9,7 +9,11 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+#DEBUGGING MODE:
+knitr::opts_chunk$set(echo = TRUE, warning = TRUE, message = TRUE)
+
+#ENABLE THIS WHEN DONE DEBUGGING
+#knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
 ```
 
 ```{r}
@@ -28,6 +32,7 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
 #install.packages("ggtext")
 #install.packages("Hmisc")
 #install.packages("NatParksPalettes")
+#install.packages("conflicted")  
 ```
 
 ```{r}
@@ -52,6 +57,20 @@ library(ggsci)
 library(MetBrewer)
 library(NatParksPalettes)
 library(colorspace)
+library(conflicted)
+
+# Potential Library Conflicts
+conflicts_prefer(dplyr::filter)
+conflicts_prefer(dplyr::select)
+conflicts_prefer(dplyr::mutate)
+conflicts_prefer(dplyr::summarise)
+
+```
+# This chunk will work globally for all ANOVAs
+```{r}
+
+# ---- GLOBAL OPTIONS ----
+options(contrasts = c("contr.sum", "contr.poly"))
 
 ```
 
@@ -76,9 +95,8 @@ newest_file <- filenames[which.max(file.info(filenames)$mtime)]
 data.raw <- read_csv(newest_file, show_col_types = FALSE) #grabs the most up to date spreadsheet
 
 ```
-
-```{r}
 # DATA CLEANING AND RELABELING
+```{r}
 
 # 1) pivoting > long format
 
@@ -122,6 +140,33 @@ Overlappicity = case_when(
 
 
 ```
+# FIX FACTOR TYPES & LEVELS ONCE, GLOBALLY 
+```{r}
+# Data reorganization: coverting learningStage into a factor (needs to be read by aov_ez)
+# ---- CANONICAL FACTOR NORMALIZATION ----
+long_parsed <- long_parsed %>%
+  mutate(
+    learningStage = factor(learningStage, levels = c("Early", "Late")),
+    Hall = factor(
+      Hall,
+      levels = c("Cue period", "1st hallway", "2nd hallway", "Goal")
+    ),
+    ROI = factor(
+      ROI,
+      levels = c("Hippocampus", "RSC", "Complex")
+    ),
+    Overlappicity = factor(Overlappicity, levels = c("OL", "NOL"))
+  )
+
+# Sanity check (ensuring downstream chunks aren't fighting corrupted data)
+stopifnot(
+  is.factor(long_parsed$Hall),
+  is.factor(long_parsed$ROI),
+  is.factor(long_parsed$learningStage)
+)
+
+```
+
 preview of color palettes
 ```{r}
 
@@ -213,23 +258,27 @@ HIPPOCAMPUS OL
 ```{r}
 
 # 1) Filtering + Subject means
-plot_data <- long_parsed %>%
+plot_data_OL_HC <- long_parsed %>%
   filter(
     ROI %in% c("Hippocampus"),     # ROI filter
     str_detect(raw_name, "ol_new_early_w_ol_new_early_|ol_new_late_w_ol_new_late_") 
   ) %>%
   group_by(ID, learningStage, Hall) %>%
-  # summarise(RSA = mean(RSA, na.rm = TRUE),
-  #           .groups = "drop") %>%
-  
-  # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
+  summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop") #%>%
+  # 
+  # # Ensure Hall is a factor in the correct order
+  # mutate(Hall = factor(Hall,
+  #                      levels = c("Cue period",
+  #                                 "1st hallway",
+  #                                 "2nd hallway",
+  #                                 "Goal")))
 
-print(plot_data)
+  
+  
+# ✅ STOP PIPE HERE
+stopifnot(nrow(plot_data_OL_HC) > 0)
+
+print(plot_data_OL_HC)
 
 ```
 ANOVA
@@ -237,11 +286,11 @@ ANOVA
 
 # summary
 # I'll have to relabel 'anova_model', 'anova_table', etc if I don't want these data to be overwritten
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
-anova_model <- aov_ez(
+# options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
+anova_model_OL_HC <- aov_ez(
   id = "ID",
   dv = "RSA",
-  data = plot_data,
+  data = plot_data_OL_HC,
   within = c("learningStage", "Hall"),
   type = 3, # Type III SS (JASP style)
   anova_table = list(
@@ -250,87 +299,83 @@ anova_model <- aov_ez(
   )
 )
 
-# # ANOVA TABLE
-anova_table <- anova_model$anova_table
-print(anova_table)
 
 # Extract ANOVA table as data frame
-anova_table <- as.data.frame(anova_model$anova_table)
+anova_table_OL_HC <- as.data.frame(anova_model_OL_HC$anova_table) |>
+  tibble::rownames_to_column(var = "Effect")
 
-
-# # Move row names (effects) into a column safely
- anova_table <- tibble::rownames_to_column(anova_table, var = "Effect")
  
 # Format p-values like JASP
- format_p <- function(p) {
-   if (p < .001) {
-     "< .001"
-  } else {
-     paste0("= ", format(round(p, 3), nsmall = 3))
-   }
- }
+format_p <- function(p) {
+  if (p < .001) "< .001"
+  else paste0("= ", format(round(p, 3), nsmall = 3))
+}
 
-# # Clean ANOVA table
- niceAnovaTable <- data.frame(
-   Effect = anova_table$Effect,
-  df1    = anova_table[[1]],   # first column = numerator df
-  df2    = anova_table[[2]],   # second column = denominator df
-  F      = round(anova_table$F, 3),
-  p      = sapply(anova_table$`Pr(>F)`, format_p),
-  `η²p`   = round(anova_table$pes, 3) # partial eta-squared
+ # format_p <- function(p) {
+ #   if (p < .001) {
+ #     "< .001"
+ #  } else {
+ #     paste0("= ", format(round(p, 3), nsmall = 3))
+ #   }
+ # }
+
+# Clean ANOVA table
+niceAnovaTable_OL_HC <- data.frame(
+  Effect = anova_table_OL_HC$Effect,
+  df1    = anova_table_OL_HC[[1]],
+  df2    = anova_table_OL_HC[[2]],
+  F      = round(anova_table_OL_HC$F, 3),
+  p      = sapply(anova_table_OL_HC$`Pr(>F)`, format_p),
+  `η²p`  = round(anova_table_OL_HC$pes, 3)
 )
 
-print(niceAnovaTable)
+print(niceAnovaTable_OL_HC)
 
 
 ```
 POST-HOCs 
 ```{r}
-library(emmeans)
 
-# Estimated marginal means for ALL 8 cells
-emm_interaction <- emmeans(anova_model, ~ learningStage * Hall)
+# Estimated marginal means for ALL 6 estimates (avg over 'learningStage')
+emm_Hall_OL_HC <- emmeans(anova_model_OL_HC, ~ Hall)
 
 
 # Holm correction
-posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+posthoc_OL_HC <- pairs(emm_Hall_OL_HC, adjust = "holm")
 
-holm_table <- summary(posthoc_holm) |>
+holm_table_OL_HC <- summary(posthoc_OL_HC) |>
   as.data.frame() |>
   mutate(
     estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    cohen_d = round(estimate / (SE * sqrt(2)), 3),  #
-    t = round(t.ratio, 2),
-    pHolms = ifelse(p.value < .001,
-               "< 0.001",
-               paste0("= ", round(p.value, 3)))
+    SE       = round(SE, 3),
+    t        = round(t.ratio, 2),
+
+    ##--------->  Incorrect RM Cohen’s d
+    cohen_d  = round(abs(t.ratio) / sqrt(df + 1), 3),
+    
+     pHolms = case_when(
+      p.value < .001 ~ "< .001",
+      TRUE ~ paste0("= ", sub("^0\\.", ".", sprintf("%.3f", round(p.value, 3))))
+    ),
+
+    sig = case_when(
+      p.value < .001 ~ "***",
+      p.value < .01  ~ "**",
+      p.value < .05  ~ "*",
+      TRUE ~ ""
+    )
+   
   )
 
-holm_table
+print(holm_table_OL_HC)
 
-# Bonferroni correction
-posthoc_bonf <- pairs(emm_interaction, adjust = "bonferroni")
 
-bonferroni_table <- summary(posthoc_bonf) |>
-  as.data.frame() |>
-  mutate(
-    estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    cohen_d = round(estimate / (SE * sqrt(2)), 3),  
-    t = round(t.ratio, 2),
-    pBonf = ifelse(p.value < .001,
-               "< 0.001",
-               paste0("= ", round(p.value, 3)))
-  )
-
-bonferroni_table
 ```
 DESCRIPTIVES
 
 ```{r}
 ###) Descriptives
-descriptives_OL_HC <- plot_data %>%
+descriptives_OL_HC <- plot_data_OL_HC %>%
   group_by(learningStage, Hall) %>%
   summarise(
     N = n(),
@@ -348,7 +393,7 @@ PLOTTING OL HIPPOCAMPUS (LearningStage x Hall)
 ```{r}
 
 # 2) Plot with ribbon for mean ± SE
-ggplot(plot_data,
+ggplot(plot_data_OL_HC,
        aes(x = Hall,
            y = RSA,
            color = learningStage,
@@ -418,23 +463,27 @@ HIPPOCAMPUS NOL
 ```{r}
 
 # 1) Filtering + Subject means
-plot_data <- long_parsed %>%
+plot_data_NOL_HC <- long_parsed %>%
   filter(
     ROI %in% c("Hippocampus"),     # ROI filter
     str_detect(raw_name, "nol_new_early_w_nol_new_early_|nol_new_late_w_nol_new_late_") 
   ) %>%
   group_by(ID, learningStage, Hall) %>%
-  # summarise(RSA = mean(RSA, na.rm = TRUE),
-  #           .groups = "drop") %>%
-  
-  # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
+  summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop") #%>%
+  # 
+  # # Ensure Hall is a factor in the correct order
+  # mutate(Hall = factor(Hall,
+  #                      levels = c("Cue period",
+  #                                 "1st hallway",
+  #                                 "2nd hallway",
+  #                                 "Goal")))
 
-print(plot_data)
+  
+  
+# ✅ STOP PIPE HERE
+stopifnot(nrow(plot_data_NOL_HC) > 0)
+
+print(plot_data_NOL_HC)
 
 ```
 ANOVA
@@ -442,11 +491,11 @@ ANOVA
 
 # summary
 # I'll have to relabel 'anova_model', 'anova_table', etc if I don't want these data to be overwritten
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
-anova_model <- aov_ez(
+# options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
+anova_model_NOL_HC <- aov_ez(
   id = "ID",
   dv = "RSA",
-  data = plot_data,
+  data = plot_data_NOL_HC,
   within = c("learningStage", "Hall"),
   type = 3, # Type III SS (JASP style)
   anova_table = list(
@@ -455,87 +504,84 @@ anova_model <- aov_ez(
   )
 )
 
-# # ANOVA TABLE
-anova_table <- anova_model$anova_table
-print(anova_table)
 
 # Extract ANOVA table as data frame
-anova_table <- as.data.frame(anova_model$anova_table)
+anova_table_NOL_HC <- as.data.frame(anova_model_NOL_HC$anova_table) |>
+  tibble::rownames_to_column(var = "Effect")
 
-
-# # Move row names (effects) into a column safely
- anova_table <- tibble::rownames_to_column(anova_table, var = "Effect")
  
 # Format p-values like JASP
- format_p <- function(p) {
-   if (p < .001) {
-     "< .001"
-  } else {
-     paste0("= ", format(round(p, 3), nsmall = 3))
-   }
- }
+format_p <- function(p) {
+  if (p < .001) "< .001"
+  else paste0("= ", format(round(p, 3), nsmall = 3))
+}
 
-# # Clean ANOVA table
- niceAnovaTable <- data.frame(
-   Effect = anova_table$Effect,
-  df1    = anova_table[[1]],   # first column = numerator df
-  df2    = anova_table[[2]],   # second column = denominator df
-  F      = round(anova_table$F, 3),
-  p      = sapply(anova_table$`Pr(>F)`, format_p),
-  `η²p`   = round(anova_table$pes, 3) # partial eta-squared
+ # format_p <- function(p) {
+ #   if (p < .001) {
+ #     "< .001"
+ #  } else {
+ #     paste0("= ", format(round(p, 3), nsmall = 3))
+ #   }
+ # }
+
+# Clean ANOVA table
+niceAnovaTable_NOL_HC <- data.frame(
+  Effect = anova_table_NOL_HC$Effect,
+  df1    = anova_table_NOL_HC[[1]],
+  df2    = anova_table_NOL_HC[[2]],
+  F      = round(anova_table_NOL_HC$F, 3),
+  p      = sapply(anova_table_NOL_HC$`Pr(>F)`, format_p),
+  `η²p`  = round(anova_table_NOL_HC$pes, 3)
 )
 
-print(niceAnovaTable)
+print(niceAnovaTable_NOL_HC)
 
 
 ```
 POST-HOCs 
 ```{r}
-library(emmeans)
 
-# Estimated marginal means for ALL 8 cells
-emm_interaction <- emmeans(anova_model, ~ learningStage * Hall)
+# no main effects nor interactions: no need to report this
+# Estimated marginal means for ALL 6 estimates (avg over 'learningStage')
+emm_Hall_NOL_HC <- emmeans(anova_model_NOL_HC, ~ Hall)
 
 
 # Holm correction
-posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+posthoc_NOL_HC <- pairs(emm_Hall_NOL_HC, adjust = "holm")
 
-holm_table <- summary(posthoc_holm) |>
+holm_table_NOL_HC <- summary(posthoc_NOL_HC) |>
   as.data.frame() |>
   mutate(
     estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    cohen_d = round(estimate / (SE * sqrt(2)), 3),  #
-    t = round(t.ratio, 2),
-    pHolms = ifelse(p.value < .001,
-               "< 0.001",
-               paste0("= ", round(p.value, 3)))
+    SE       = round(SE, 3),
+    t        = round(t.ratio, 2),
+
+    ##--------->  Incorrect RM Cohen’s d
+    cohen_d  = round(abs(t.ratio) / sqrt(df + 1), 3),
+    
+     pHolms = case_when(
+      p.value < .001 ~ "< .001",
+      TRUE ~ paste0("= ", sub("^0\\.", ".", sprintf("%.3f", round(p.value, 3))))
+    ),
+
+    sig = case_when(
+      p.value < .001 ~ "***",
+      p.value < .01  ~ "**",
+      p.value < .05  ~ "*",
+      TRUE ~ ""
+    )
+   
   )
 
-holm_table
+print(holm_table_NOL_HC)
 
-# Bonferroni correction
-posthoc_bonf <- pairs(emm_interaction, adjust = "bonferroni")
 
-bonferroni_table <- summary(posthoc_bonf) |>
-  as.data.frame() |>
-  mutate(
-    estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    cohen_d = round(estimate / (SE * sqrt(2)), 3),  
-    t = round(t.ratio, 2),
-    pBonf = ifelse(p.value < .001,
-               "< 0.001",
-               paste0("= ", round(p.value, 3)))
-  )
-
-bonferroni_table
 ```
 DESCRIPTIVES
 
 ```{r}
 ###) Descriptives
-descriptives_NOL_HC <- plot_data %>%
+descriptives_NOL_HC <- plot_data_NOL_HC %>%
   group_by(learningStage, Hall) %>%
   summarise(
     N = n(),
@@ -548,12 +594,12 @@ descriptives_NOL_HC <- plot_data %>%
 
 print(descriptives_NOL_HC)
 ```
-PLOTTING OL HIPPOCAMPUS (LearningStage x Hall)
+PLOTTING NOL HIPPOCAMPUS (LearningStage x Hall)
 
 ```{r}
 
 # 2) Plot with ribbon for mean ± SE
-ggplot(plot_data,
+ggplot(plot_data_NOL_HC,
        aes(x = Hall,
            y = RSA,
            color = learningStage,
@@ -566,11 +612,16 @@ ggplot(plot_data,
                alpha = 0.15,
                color = NA) +
   
-  # Mean line with Early dashed, Late solid
+   # Mean line with Early dashed, Late solid
   stat_summary(fun = mean,
                geom = "line",
                aes(linetype = learningStage),
                linewidth = 1) +
+  
+  # Mean solid line
+  # stat_summary(fun = mean,
+  #              geom = "line",
+  #              linewidth = 1) +
   
   # Mean points
   stat_summary(fun = mean,
@@ -587,6 +638,12 @@ ggplot(plot_data,
   scale_fill_manual(values = c(
    "Early" = HC_NOL_Early_orange,
     "Late" = HC_NOL_Late_orange
+  )) +
+  
+  # Line types
+  scale_linetype_manual(values = c(
+    "Early" = "dashed",
+    "Late" = "solid"
   )) +
   
   # Labels
@@ -610,123 +667,97 @@ RSC OL
 -> Repeated meausures ANOVA Learning stage (Early,Late) x Hall (Cue period, 1st hall, 2nd hall, goal)
 (1) OL RSC 
 ```{r}
-
 # 1) Filtering + Subject means
-plot_data <- long_parsed %>%
+plot_data_OL_RSC <- long_parsed %>%
   filter(
-    ROI %in% c("RSC"),     # ROI filter
+    ROI %in% c("RSC"),     # ✅ updated ROI
     str_detect(raw_name, "ol_new_early_w_ol_new_early_|ol_new_late_w_ol_new_late_") 
   ) %>%
   group_by(ID, learningStage, Hall) %>%
-  
-  # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
+  summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop")
 
-print(plot_data)
+# ✅ STOP PIPE HERE
+stopifnot(nrow(plot_data_OL_RSC) > 0)
+
+print(plot_data_OL_RSC)
 
 ```
 ANOVA
 ```{r}
-
-# summary
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
-anova_model <- aov_ez(
+anova_model_OL_RSC <- aov_ez(
   id = "ID",
   dv = "RSA",
-  data = plot_data,
+  data = plot_data_OL_RSC,
   within = c("learningStage", "Hall"),
-  type = 3, # Type III SS (JASP style)
+  type = 3,
   anova_table = list(
-    correction = "GG", # <-- Greenhouse–Geisser correction for when factors ≥3 levels (e.g., Halls)
-    es = "pes"   # partial eta squared
+    correction = "GG",
+    es = "pes"
   )
 )
 
-# # ANOVA TABLE
-anova_table <- anova_model$anova_table
-print(anova_table)
+# Extract ANOVA table
+anova_table_OL_RSC <- as.data.frame(anova_model_OL_RSC$anova_table) |>
+  tibble::rownames_to_column(var = "Effect")
 
-# Extract ANOVA table as data frame
-anova_table <- as.data.frame(anova_model$anova_table)
+# Format p-values
+format_p <- function(p) {
+  if (p < .001) "< .001"
+  else paste0("= ", format(round(p, 3), nsmall = 3))
+}
 
-
-# # Move row names (effects) into a column safely
- anova_table <- tibble::rownames_to_column(anova_table, var = "Effect")
- 
-# Format p-values like JASP
- format_p <- function(p) {
-   if (p < .001) {
-     "< .001"
-  } else {
-     paste0("= ", format(round(p, 3), nsmall = 3))
-   }
- }
-
-# # Clean ANOVA table
- niceAnovaTable <- data.frame(
-   Effect = anova_table$Effect,
-  df1    = anova_table[[1]],   # first column = numerator df
-  df2    = anova_table[[2]],   # second column = denominator df
-  F      = round(anova_table$F, 3),
-  p      = sapply(anova_table$`Pr(>F)`, format_p),
-  `η²p`   = round(anova_table$pes, 3) # partial eta-squared
+# Clean table
+niceAnovaTable_OL_RSC <- data.frame(
+  Effect = anova_table_OL_RSC$Effect,
+  df1    = anova_table_OL_RSC[[1]],
+  df2    = anova_table_OL_RSC[[2]],
+  F      = round(anova_table_OL_RSC$F, 3),
+  p      = sapply(anova_table_OL_RSC$`Pr(>F)`, format_p),
+  `η²p`  = round(anova_table_OL_RSC$pes, 3)
 )
 
-print(niceAnovaTable)
-
+print(niceAnovaTable_OL_RSC)
 
 ```
 POST-HOCs 
 ```{r}
-library(emmeans)
 
-# Estimated marginal means for ALL 8 cells
-emm_interaction <- emmeans(anova_model, ~ learningStage * Hall)
-
+# EMMs averaged over learningStage (6 comparisons)
+emm_Hall_OL_RSC <- emmeans(anova_model_OL_RSC, ~ Hall)
 
 # Holm correction
-posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+posthoc_OL_RSC <- pairs(emm_Hall_OL_RSC, adjust = "holm")
 
-holm_table <- summary(posthoc_holm) |>
+holm_table_OL_RSC <- summary(posthoc_OL_RSC) |>
   as.data.frame() |>
   mutate(
     estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    cohen_d = round(estimate / (SE * sqrt(2)), 3),  #
-    t = round(t.ratio, 2),
-    pHolms = ifelse(p.value < .001,
-               "< 0.001",
-               paste0("= ", round(p.value, 3)))
+    SE       = round(SE, 3),
+    t        = round(t.ratio, 2),
+
+    # ✅ RM Cohen’s d
+    cohen_d  = round(abs(t.ratio) / sqrt(df + 1), 3),
+
+    pHolms = case_when(
+      p.value < .001 ~ "< .001",
+      TRUE ~ paste0("= ", sub("^0\\.", ".", sprintf("%.3f", round(p.value, 3))))
+    ),
+
+    sig = case_when(
+      p.value < .001 ~ "***",
+      p.value < .01  ~ "**",
+      p.value < .05  ~ "*",
+      TRUE ~ ""
+    )
   )
 
-holm_table
+print(holm_table_OL_RSC)
 
-# Bonferroni correction
-posthoc_bonf <- pairs(emm_interaction, adjust = "bonferroni")
-
-bonferroni_table <- summary(posthoc_bonf) |>
-  as.data.frame() |>
-  mutate(
-    estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    cohen_d = round(estimate / (SE * sqrt(2)), 3),  
-    t = round(t.ratio, 2),
-    pBonf = ifelse(p.value < .001,
-               "< 0.001",
-               paste0("= ", round(p.value, 3)))
-  )
-
-bonferroni_table
 ```
 DESCRIPTIVES
 
 ```{r}
-###) Descriptives
-descriptives_OL_RSC <- plot_data %>%
+descriptives_OL_RSC <- plot_data_OL_RSC %>%
   group_by(learningStage, Hall) %>%
   summarise(
     N = n(),
@@ -738,13 +769,14 @@ descriptives_OL_RSC <- plot_data %>%
   mutate(across(c(Mean, SD, SE), ~ round(.x, 3)))
 
 print(descriptives_OL_RSC)
+
 ```
 PLOTTING OL RSC (LearningStage x Hall)
 
 ```{r}
 
 # 2) Plot with ribbon for mean ± SE
-ggplot(plot_data,
+ggplot(plot_data_OL_RSC,
        aes(x = Hall,
            y = RSA,
            color = learningStage,
@@ -808,121 +840,96 @@ RSC NOL
 ```{r}
 
 # 1) Filtering + Subject means
-plot_data <- long_parsed %>%
+plot_data_NOL_RSC <- long_parsed %>%
   filter(
-    ROI %in% c("RSC"),     # ROI filter
+    ROI %in% c("RSC"),     # ✅ updated ROI
     str_detect(raw_name, "nol_new_early_w_nol_new_early_|nol_new_late_w_nol_new_late_") 
   ) %>%
   group_by(ID, learningStage, Hall) %>%
-  
-  # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
+  summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop")
 
-print(plot_data)
+# ✅ STOP PIPE HERE
+stopifnot(nrow(plot_data_NOL_RSC) > 0)
+
+print(plot_data_NOL_RSC)
 
 ```
 ANOVA
 ```{r}
-
-# summary
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
-anova_model <- aov_ez(
+anova_model_NOL_RSC <- aov_ez(
   id = "ID",
   dv = "RSA",
-  data = plot_data,
+  data = plot_data_NOL_RSC,
   within = c("learningStage", "Hall"),
-  type = 3, # Type III SS (JASP style)
+  type = 3,
   anova_table = list(
-    correction = "GG", # <-- Greenhouse–Geisser correction for when factors ≥3 levels (e.g., Halls)
-    es = "pes"   # partial eta squared
+    correction = "GG",
+    es = "pes"
   )
 )
 
-# # ANOVA TABLE
-anova_table <- anova_model$anova_table
-print(anova_table)
+# Extract ANOVA table
+anova_table_NOL_RSC <- as.data.frame(anova_model_NOL_RSC$anova_table) |>
+  tibble::rownames_to_column(var = "Effect")
 
-# Extract ANOVA table as data frame
-anova_table <- as.data.frame(anova_model$anova_table)
+# Format p-values
+format_p <- function(p) {
+  if (p < .001) "< .001"
+  else paste0("= ", format(round(p, 3), nsmall = 3))
+}
 
-
-# # Move row names (effects) into a column safely
- anova_table <- tibble::rownames_to_column(anova_table, var = "Effect")
- 
-# Format p-values like JASP
- format_p <- function(p) {
-   if (p < .001) {
-     "< .001"
-  } else {
-     paste0("= ", format(round(p, 3), nsmall = 3))
-   }
- }
-
-# # Clean ANOVA table
- niceAnovaTable <- data.frame(
-   Effect = anova_table$Effect,
-  df1    = anova_table[[1]],   # first column = numerator df
-  df2    = anova_table[[2]],   # second column = denominator df
-  F      = round(anova_table$F, 3),
-  p      = sapply(anova_table$`Pr(>F)`, format_p),
-  `η²p`   = round(anova_table$pes, 3) # partial eta-squared
+# Clean table
+niceAnovaTable_NOL_RSC <- data.frame(
+  Effect = anova_table_NOL_RSC$Effect,
+  df1    = anova_table_NOL_RSC[[1]],
+  df2    = anova_table_NOL_RSC[[2]],
+  F      = round(anova_table_NOL_RSC$F, 3),
+  p      = sapply(anova_table_NOL_RSC$`Pr(>F)`, format_p),
+  `η²p`  = round(anova_table_NOL_RSC$pes, 3)
 )
 
-print(niceAnovaTable)
-
+print(niceAnovaTable_NOL_RSC)
 
 ```
 POST-HOCs 
 ```{r}
-library(emmeans)
 
-# Estimated marginal means for ALL 8 cells
-emm_interaction <- emmeans(anova_model, ~ learningStage * Hall)
-
+# EMMs averaged over learningStage (6 comparisons)
+emm_Hall_NOL_RSC <- emmeans(anova_model_NOL_RSC, ~ Hall)
 
 # Holm correction
-posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+posthoc_NOL_RSC <- pairs(emm_Hall_NOL_RSC, adjust = "holm")
 
-holm_table <- summary(posthoc_holm) |>
+holm_table_NOL_RSC <- summary(posthoc_NOL_RSC) |>
   as.data.frame() |>
   mutate(
     estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    cohen_d = round(estimate / (SE * sqrt(2)), 3),  #
-    t = round(t.ratio, 2),
-    pHolms = ifelse(p.value < .001,
-               "< 0.001",
-               paste0("= ", round(p.value, 3)))
+    SE       = round(SE, 3),
+    t        = round(t.ratio, 2),
+
+    # ✅ RM Cohen’s d
+    cohen_d  = round(abs(t.ratio) / sqrt(df + 1), 3),
+
+    pHolms = case_when(
+      p.value < .001 ~ "< .001",
+      TRUE ~ paste0("= ", sub("^0\\.", ".", sprintf("%.3f", round(p.value, 3))))
+    ),
+
+    sig = case_when(
+      p.value < .001 ~ "***",
+      p.value < .01  ~ "**",
+      p.value < .05  ~ "*",
+      TRUE ~ ""
+    )
   )
 
-holm_table
+print(holm_table_NOL_RSC)
 
-# Bonferroni correction
-posthoc_bonf <- pairs(emm_interaction, adjust = "bonferroni")
-
-bonferroni_table <- summary(posthoc_bonf) |>
-  as.data.frame() |>
-  mutate(
-    estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    cohen_d = round(estimate / (SE * sqrt(2)), 3),  
-    t = round(t.ratio, 2),
-    pBonf = ifelse(p.value < .001,
-               "< 0.001",
-               paste0("= ", round(p.value, 3)))
-  )
-
-bonferroni_table
 ```
 DESCRIPTIVES
 
 ```{r}
-###) Descriptives
-descriptives_NOL_RSC <- plot_data %>%
+descriptives_NOL_RSC <- plot_data_NOL_RSC %>%
   group_by(learningStage, Hall) %>%
   summarise(
     N = n(),
@@ -940,7 +947,7 @@ PLOTTING NOL RSC (LearningStage x Hall)
 ```{r}
 
 # 2) Plot with ribbon for mean ± SE
-ggplot(plot_data,
+ggplot(plot_data_NOL_RSC,
        aes(x = Hall,
            y = RSA,
            color = learningStage,
@@ -985,7 +992,7 @@ ggplot(plot_data,
    # Labels
   labs(x = "Hall",
        y = "Representational similarity (r)",
-       title = "(2a) OL Learning Stage RSC",
+       title = "(2a) NOL Learning Stage RSC",
        color = "Learning stage",
        fill = "Learning stage",
        linetype = "Learning stage") +
@@ -1005,121 +1012,98 @@ RSComplex OL
 ```{r}
 
 # 1) Filtering + Subject means
-plot_data <- long_parsed %>%
+plot_data_OL_RSComplex <- long_parsed %>%
   filter(
-    ROI %in% c("Complex"),     # ROI filter
+    ROI %in% c("Complex"),     # ✅ correct ROI name in data
     str_detect(raw_name, "ol_new_early_w_ol_new_early_|ol_new_late_w_ol_new_late_") 
   ) %>%
   group_by(ID, learningStage, Hall) %>%
-  
-  # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
+  summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop")
 
-print(plot_data)
+stopifnot(nrow(plot_data_OL_RSComplex) > 0)
+
+print(plot_data_OL_RSComplex)
 
 ```
 ANOVA
 ```{r}
 
-# summary
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
-anova_model <- aov_ez(
+
+anova_model_OL_RSComplex <- aov_ez(
   id = "ID",
   dv = "RSA",
-  data = plot_data,
+  data = plot_data_OL_RSComplex,
   within = c("learningStage", "Hall"),
-  type = 3, # Type III SS (JASP style)
+  type = 3,
   anova_table = list(
-    correction = "GG", # <-- Greenhouse–Geisser correction for when factors ≥3 levels (e.g., Halls)
-    es = "pes"   # partial eta squared
+    correction = "GG",
+    es = "pes"
   )
 )
 
-# # ANOVA TABLE
-anova_table <- anova_model$anova_table
-print(anova_table)
 
 # Extract ANOVA table as data frame
-anova_table <- as.data.frame(anova_model$anova_table)
+anova_table_OL_RSComplex <- as.data.frame(anova_model_OL_RSComplex$anova_table) |>
+  tibble::rownames_to_column(var = "Effect")
 
 
-# # Move row names (effects) into a column safely
- anova_table <- tibble::rownames_to_column(anova_table, var = "Effect")
  
 # Format p-values like JASP
- format_p <- function(p) {
-   if (p < .001) {
-     "< .001"
-  } else {
-     paste0("= ", format(round(p, 3), nsmall = 3))
-   }
- }
+format_p <- function(p) {
+  if (p < .001) "< .001"
+  else paste0("= ", format(round(p, 3), nsmall = 3))
+}
 
-# # Clean ANOVA table
- niceAnovaTable <- data.frame(
-   Effect = anova_table$Effect,
-  df1    = anova_table[[1]],   # first column = numerator df
-  df2    = anova_table[[2]],   # second column = denominator df
-  F      = round(anova_table$F, 3),
-  p      = sapply(anova_table$`Pr(>F)`, format_p),
-  `η²p`   = round(anova_table$pes, 3) # partial eta-squared
+
+# Clean ANOVA table
+ 
+niceAnovaTable_OL_RSComplex <- data.frame(
+  Effect = anova_table_OL_RSComplex$Effect,
+  df1    = anova_table_OL_RSComplex[[1]],
+  df2    = anova_table_OL_RSComplex[[2]],
+  F      = round(anova_table_OL_RSComplex$F, 3),
+  p      = sapply(anova_table_OL_RSComplex$`Pr(>F)`, format_p),
+  `η²p`  = round(anova_table_OL_RSComplex$pes, 3)
 )
 
-print(niceAnovaTable)
-
+print(niceAnovaTable_OL_RSComplex)
 
 ```
 POST-HOCs 
 ```{r}
-library(emmeans)
+emm_Hall_OL_RSComplex <- emmeans(anova_model_OL_RSComplex, ~ Hall)
 
-# Estimated marginal means for ALL 8 cells
-emm_interaction <- emmeans(anova_model, ~ learningStage * Hall)
+posthoc_OL_RSComplex <- pairs(emm_Hall_OL_RSComplex, adjust = "holm")
 
-
-# Holm correction
-posthoc_holm <- pairs(emm_interaction, adjust = "holm")
-
-holm_table <- summary(posthoc_holm) |>
+holm_table_OL_RSComplex <- summary(posthoc_OL_RSComplex) |>
   as.data.frame() |>
   mutate(
     estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    cohen_d = round(estimate / (SE * sqrt(2)), 3),  #
-    t = round(t.ratio, 2),
-    pHolms = ifelse(p.value < .001,
-               "< 0.001",
-               paste0("= ", round(p.value, 3)))
+    SE       = round(SE, 3),
+    t        = round(t.ratio, 2),
+
+    cohen_d  = round(abs(t.ratio) / sqrt(df + 1), 3),
+
+    pHolms = case_when(
+      p.value < .001 ~ "< .001",
+      TRUE ~ paste0("= ", sub("^0\\.", ".", sprintf("%.3f", round(p.value, 3))))
+    ),
+
+    sig = case_when(
+      p.value < .001 ~ "***",
+      p.value < .01  ~ "**",
+      p.value < .05  ~ "*",
+      TRUE ~ ""
+    )
   )
 
-holm_table
-
-# Bonferroni correction
-posthoc_bonf <- pairs(emm_interaction, adjust = "bonferroni")
-
-bonferroni_table <- summary(posthoc_bonf) |>
-  as.data.frame() |>
-  mutate(
-    estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    cohen_d = round(estimate / (SE * sqrt(2)), 3),  
-    t = round(t.ratio, 2),
-    pBonf = ifelse(p.value < .001,
-               "< 0.001",
-               paste0("= ", round(p.value, 3)))
-  )
-
-bonferroni_table
+print(holm_table_OL_RSComplex)
 ```
 DESCRIPTIVES
 
 ```{r}
-###) Descriptives
-descriptives_OL_RSComplex <- plot_data %>%
+
+descriptives_OL_RSComplex <- plot_data_OL_RSComplex %>%
   group_by(learningStage, Hall) %>%
   summarise(
     N = n(),
@@ -1131,13 +1115,14 @@ descriptives_OL_RSComplex <- plot_data %>%
   mutate(across(c(Mean, SD, SE), ~ round(.x, 3)))
 
 print(descriptives_OL_RSComplex)
+
 ```
 PLOTTING OL RSComplex (LearningStage x Hall)
 
 ```{r}
 
 # 2) Plot with ribbon for mean ± SE
-ggplot(plot_data,
+ggplot(plot_data_OL_RSComplex,
        aes(x = Hall,
            y = RSA,
            color = learningStage,
@@ -1201,121 +1186,119 @@ RSComplex NOL
 ```{r}
 
 # 1) Filtering + Subject means
-plot_data <- long_parsed %>%
+plot_data_NOL_RSComplex <- long_parsed %>%
   filter(
-    ROI %in% c("Complex"),     # ROI filter
+    ROI %in% c("Complex"),     # ✅ correct ROI name in data
     str_detect(raw_name, "nol_new_early_w_nol_new_early_|nol_new_late_w_nol_new_late_") 
   ) %>%
   group_by(ID, learningStage, Hall) %>%
-  
-  # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
+  summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop")
 
-print(plot_data)
+stopifnot(nrow(plot_data_NOL_RSComplex) > 0)
+
+print(plot_data_NOL_RSComplex)
 
 ```
 ANOVA
 ```{r}
 
-# summary
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
-anova_model <- aov_ez(
+anova_model_NOL_RSComplex <- aov_ez(
   id = "ID",
   dv = "RSA",
-  data = plot_data,
+  data = plot_data_NOL_RSComplex,
   within = c("learningStage", "Hall"),
-  type = 3, # Type III SS (JASP style)
+  type = 3,
   anova_table = list(
-    correction = "GG", # <-- Greenhouse–Geisser correction for when factors ≥3 levels (e.g., Halls)
-    es = "pes"   # partial eta squared
+    correction = "GG",
+    es = "pes"
   )
 )
 
-# # ANOVA TABLE
-anova_table <- anova_model$anova_table
-print(anova_table)
 
 # Extract ANOVA table as data frame
-anova_table <- as.data.frame(anova_model$anova_table)
+anova_table_NOL_RSComplex <- as.data.frame(anova_model_NOL_RSComplex$anova_table) |>
+  tibble::rownames_to_column(var = "Effect")
 
 
-# # Move row names (effects) into a column safely
- anova_table <- tibble::rownames_to_column(anova_table, var = "Effect")
  
 # Format p-values like JASP
- format_p <- function(p) {
-   if (p < .001) {
-     "< .001"
-  } else {
-     paste0("= ", format(round(p, 3), nsmall = 3))
-   }
- }
+format_p <- function(p) {
+  if (p < .001) "< .001"
+  else paste0("= ", format(round(p, 3), nsmall = 3))
+}
 
-# # Clean ANOVA table
- niceAnovaTable <- data.frame(
-   Effect = anova_table$Effect,
-  df1    = anova_table[[1]],   # first column = numerator df
-  df2    = anova_table[[2]],   # second column = denominator df
-  F      = round(anova_table$F, 3),
-  p      = sapply(anova_table$`Pr(>F)`, format_p),
-  `η²p`   = round(anova_table$pes, 3) # partial eta-squared
+
+# Clean ANOVA table
+ 
+niceAnovaTable_NOL_RSComplex <- data.frame(
+  Effect = anova_table_NOL_RSComplex$Effect,
+  df1    = anova_table_NOL_RSComplex[[1]],
+  df2    = anova_table_NOL_RSComplex[[2]],
+  F      = round(anova_table_NOL_RSComplex$F, 3),
+  p      = sapply(anova_table_NOL_RSComplex$`Pr(>F)`, format_p),
+  `η²p`  = round(anova_table_NOL_RSComplex$pes, 3)
 )
 
-print(niceAnovaTable)
-
+print(niceAnovaTable_NOL_RSComplex)
 
 ```
 POST-HOCs 
 ```{r}
-library(emmeans)
+# 4 main effect of HAll
+emm_Hall_NOL_RSComplex <- emmeans(anova_model_NOL_RSComplex, ~ Hall)
 
-# Estimated marginal means for ALL 8 cells
-emm_interaction <- emmeans(anova_model, ~ learningStage * Hall)
+posthoc_NOL_RSComplex <- pairs(emm_Hall_NOL_RSComplex, adjust = "holm")
 
-
-# Holm correction
-posthoc_holm <- pairs(emm_interaction, adjust = "holm")
-
-holm_table <- summary(posthoc_holm) |>
+holm_table_NOL_RSComplex <- summary(posthoc_NOL_RSComplex) |>
   as.data.frame() |>
   mutate(
     estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    cohen_d = round(estimate / (SE * sqrt(2)), 3),  #
-    t = round(t.ratio, 2),
-    pHolms = ifelse(p.value < .001,
-               "< 0.001",
-               paste0("= ", round(p.value, 3)))
+    SE       = round(SE, 3),
+    t        = round(t.ratio, 2),
+
+    cohen_d  = round(abs(t.ratio) / sqrt(df + 1), 3),
+
+    pHolms = case_when(
+      p.value < .001 ~ "< .001",
+      TRUE ~ paste0("= ", sub("^0\\.", ".", sprintf("%.3f", round(p.value, 3))))
+    ),
+
+    sig = case_when(
+      p.value < .001 ~ "***",
+      p.value < .01  ~ "**",
+      p.value < .05  ~ "*",
+      TRUE ~ ""
+    )
   )
 
-holm_table
+print(holm_table_NOL_RSComplex)
 
-# Bonferroni correction
-posthoc_bonf <- pairs(emm_interaction, adjust = "bonferroni")
+# # If significant interaction (Note no longer significant with GG sphericity correction)
+# emm_interaction <- emmeans(anova_model_NOL_RSComplex, ~ learningStage * Hall)
+# 
+# # Holm correction
+# posthoc_holm_inter <- pairs(emm_interaction, adjust = "holm")
+# 
+# holm_table_NOL_RSComplex_Inter <- summary(posthoc_holm_inter) |>
+#   as.data.frame() |>
+#   mutate(
+#     estimate = round(estimate, 3),
+#     SE = round(SE, 3),
+#     cohen_d = round(estimate / (SE * sqrt(2)), 3),  
+#     t = round(t.ratio, 2),
+#     pHolms = ifelse(p.value < .001,
+#                "< 0.001",
+#                paste0("= ", round(p.value, 3)))
+#   )
+# 
+# print(holm_table_NOL_RSComplex_Inter)
 
-bonferroni_table <- summary(posthoc_bonf) |>
-  as.data.frame() |>
-  mutate(
-    estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    cohen_d = round(estimate / (SE * sqrt(2)), 3),  
-    t = round(t.ratio, 2),
-    pBonf = ifelse(p.value < .001,
-               "< 0.001",
-               paste0("= ", round(p.value, 3)))
-  )
-
-bonferroni_table
 ```
 DESCRIPTIVES
 
 ```{r}
-###) Descriptives
-descriptives_NOL_RSComplex <- plot_data %>%
+
+descriptives_NOL_RSComplex <- plot_data_NOL_RSComplex %>%
   group_by(learningStage, Hall) %>%
   summarise(
     N = n(),
@@ -1333,7 +1316,7 @@ PLOTTING NOL RSComplex (LearningStage x Hall)
 ```{r}
 
 # 2) Plot with ribbon for mean ± SE
-ggplot(plot_data,
+ggplot(plot_data_NOL_RSComplex,
        aes(x = Hall,
            y = RSA,
            color = learningStage,
@@ -1387,767 +1370,13 @@ ggplot(plot_data,
 # Clean theme
   theme_classic(base_size = 14)
 ```
-
-*****************************************
-2) NATURE OF REPRESENTATIONS
-**************************
-HC vs RSC
-**************************
-
-(2a) OL EARLY HC vs RSC
-## PLOT: OL EARLY HC vs RSC vs RSComplex
-```{r}
-# 1) Filtering + Subject means
-plot_data <- long_parsed %>%
-  filter(
-    ROI %in% c("RSC", "Hippocampus"),     # ROI filter
-    str_detect(raw_name, "ol_new_early_w_ol_new_early_")  
-  ) %>%
-  group_by(ID, ROI, Hall) %>%
-  # summarise(RSA = mean(RSA, na.rm = TRUE),
-  #           .groups = "drop") %>%
-  
-  # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
-
-print(plot_data)
-```
-
-ANOVA
-```{r}
-
-# summary
-# I'll have to relabel 'anova_model', 'anova_table', etc if I don't want these data to be overwritten
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
-anova_model <- aov_ez(
-  id = "ID",
-  dv = "RSA",
-  data = plot_data,
-  within = c("ROI", "Hall"),
-  type = 3, # Type III SS (JASP style)
-  anova_table = list(
-    correction = "GG", # <-- Greenhouse–Geisser correction for when factors ≥3 levels (e.g., Halls)
-    es = "pes"   # partial eta squared
-  )
-)
-
-# # ANOVA TABLE
-anova_table <- anova_model$anova_table
-print(anova_table)
-
-# Extract ANOVA table as data frame
-anova_table <- as.data.frame(anova_model$anova_table)
-
-
-# # Move row names (effects) into a column safely
- anova_table <- tibble::rownames_to_column(anova_table, var = "Effect")
- 
-# Format p-values like JASP
- format_p <- function(p) {
-   if (p < .001) {
-     "< .001"
-  } else {
-     paste0("= ", format(round(p, 3), nsmall = 3))
-   }
- }
-
-# # Clean ANOVA table
- niceAnovaTable <- data.frame(
-   Effect = anova_table$Effect,
-  df1    = anova_table[[1]],   # first column = numerator df
-  df2    = anova_table[[2]],   # second column = denominator df
-  F      = round(anova_table$F, 3),
-  p      = sapply(anova_table$`Pr(>F)`, format_p),
-  `η²p`   = round(anova_table$pes, 3) # partial eta-squared
-)
-
-print(niceAnovaTable)
-
-
-```
-POST-HOCs 
-
-```{r}
-# Holm
-posthoc_holm <- pairs(emm_interaction, adjust = "holm")
-
-holm_table <- summary(posthoc_holm) |>
-  as.data.frame() |>
-  mutate(
-    estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    t = round(t.ratio, 2),
-    p_uncorrected = p.value,  # raw
-    p_holm = p.adjust(p.value, method = "holm")  # show Holm-corrected
-  )
-
-holm_table
-
-posthoc_holm1 <- pairs(emm_interaction, adjust = "holm")
-
-holm_table1 <- summary(posthoc_holm1) |>
-  as.data.frame() |>
-  mutate(
-    estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    t = round(t.ratio, 2),
-    p = ifelse(p.value < .001, "< 0.001", paste0("= ", round(p.value, 3)))
-  )
-holm_table1
-
-# tukey
-# posthoc_tukey <- pairs(emm_interaction, adjust = "tukey")
-# 
-# tukey_table <- summary(posthoc_tukey) |>
-#   as.data.frame() |>
-#   mutate(
-#     estimate = round(estimate, 3),
-#     SE = round(SE, 3),
-#     t = round(t.ratio, 2),
-#     p = ifelse(p.value < .001, "< 0.001",
-#                paste0("= ", round(p.value, 3)))
-#   )
-# 
-# tukey_table
-
-# Bonferroni
-posthoc_bonf <- pairs(emm_interaction, adjust = "bonferroni")
-
-bonferroni_table <- summary(posthoc_bonf) |>
-  as.data.frame() |>
-  mutate(
-    estimate = round(estimate, 3),
-    SE = round(SE, 3),
-    t = round(t.ratio, 2),
-    p = ifelse(p.value < .001, "< 0.001",
-               paste0("= ", round(p.value, 3)))
-  )
-
-bonferroni_table
-
-```
-DESCRIPTIVES
-
-```{r}
-###) Descriptives
-descriptives_OL_Early_HCvsRSC <- plot_data %>%
-  group_by(ROI, Hall) %>%
-  summarise(
-    N = n(),
-    Mean = mean(RSA, na.rm = TRUE),
-    SD = sd(RSA, na.rm = TRUE),
-    SE = SD / sqrt(N),
-    .groups = "drop"
-  ) %>%
-  mutate(across(c(Mean, SD, SE), ~ round(.x, 3)))
-
-print(descriptives_OL_Early_HCvsRSC)
-```
-
-PLOTTING OL EARLY HC vs RSC vs RSComplex
-```{r}
-## Additional filters to add the RSComplex
-
-# 1) Removing ROI filter -> we get all 3 ROIs 
-plot_HC_RSC_Complex_Early_OL <- long_parsed %>%
-  filter(
-    str_detect(raw_name, "ol_new_early_w_ol_new_early_")  
-  ) %>%
- 
-
-# Normalize RSComplex names so colors/legend map correctly
-  mutate(
-    ROI = dplyr::recode(ROI,
-                        "Complex" = "RSComplex",
-                        "RS Complex" = "RSComplex",
-                        .default = ROI),
-    
-    # Lock ROI order to ensure consistent plotting/legend
-    ROI = factor(ROI, levels = c("Hippocampus", "RSC", "RSComplex")),
-    # Ensure Hall is ordered for the x-axis
-    Hall = factor(Hall,
-                  levels = c("Cue period",
-                             "1st hallway",
-                             "2nd hallway",
-                             "Goal"))
-  )
-
-## Plotting the 3 ROIs
-# 2) Plot with ribbon for mean ± SE
-ggplot(plot_HC_RSC_Complex_Early_OL,
-       aes(x = Hall,
-           y = RSA,
-           color = ROI,
-           fill = ROI,
-           group = ROI)) +
-  
-  # Ribbon for standard error
-  stat_summary(fun.data = mean_se,
-               geom = "ribbon",
-               alpha = 0.15,
-               color = NA) +
-  
-  # Mean line
-  stat_summary(fun = mean,
-               geom = "line",
-               linewidth = 1) +
-  
-  # Mean points
-  stat_summary(fun = mean,
-               geom = "point",
-               size = 3) +
-  
-  # Custom colors
-  
-  scale_color_manual(values = c(
-    "RSC" = RSC_OL_Early_purple,
-    "Hippocampus" = HC_OL_Early_orange,
-    "RSComplex" = Complex_OL_Early_blue
-  )) +
-  
-  scale_fill_manual(values = c(
-    "RSC" = RSC_OL_Early_purple,
-    "Hippocampus" = HC_OL_Early_orange,
-    "RSComplex" = Complex_OL_Early_blue
-  )) +
-  
-  # Labels
-  labs(x = "Hall",
-       y = "Representational similarity (r)",
-       title = "(2a) OL EARLY HC vs RSC vs RSComplex",
-       #subtitle = "(2a) OL EARLY HCvsRSC",
-       color = "ROI",
-       fill = "ROI") +
-  
-  # Clean theme
-  theme_classic(base_size = 14)
-
-```
-2a) OL Late HC vs RSC 
-# Plotting HC vs RSC vs Complex
-```{r}
-# (2a) OL EARLY HC vs RSC 
-
-# 1) Filtering + Subject means
-plot_data <- long_parsed %>%
-  filter(
-    ROI %in% c("RSC", "Hippocampus"),     # ROI filter
-    str_detect(raw_name, "ol_new_late_w_ol_new_late_")  
-  ) %>%
-  group_by(ID, ROI, Hall) %>%
-  # summarise(RSA = mean(RSA, na.rm = TRUE),
-  #           .groups = "drop") %>%
-  
-  # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
-
-print(plot_data)
-
-```
-ANOVA
-```{r}
-
- # ANOVA
-# summary
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
-anova_model <- aov_ez(
-  id = "ID",
-  dv = "RSA",
-  data = plot_data,
-  within = c("ROI", "Hall"),
-  type = 3, # Type III SS (JASP style)
-  anova_table = list(
-    es = "pes"   # partial eta squared
-  )
-)
-
-# ANOVA TABLE
-# anova_table <- anova_model$anova_table
-# print(anova_table)
-# Extract ANOVA table as data frame
-anova_table <- as.data.frame(anova_model$anova_table)
-
-
-# Move row names (effects) into a column safely
-anova_table <- tibble::rownames_to_column(anova_table, var = "Effect")
-
-# Format p-values like JASP
-format_p <- function(p) {
-  if (p < .001) {
-    "< .001"
-  } else {
-    paste0("= ", format(round(p, 3), nsmall = 3))
-  }
-}
-
-# Clean ANOVA table
-niceAnovaTable <- data.frame(
-  Effect = anova_table$Effect,
-  df1    = anova_table[[1]],   # first column = numerator df
-  df2    = anova_table[[2]],   # second column = denominator df
-  F      = round(anova_table$F, 3),
-  p      = sapply(anova_table$`Pr(>F)`, format_p),
-  `η²p`   = round(anova_table$pes, 3) # partial eta-squared
-)
-
-print(niceAnovaTable)
-
-
-```
-DESCRIPTIVES
-```{r}
-###) Descriptives
-descriptives_OL_Late_HCvsRSC <- plot_data %>%
-  group_by(ROI, Hall) %>%
-  summarise(
-    N = n(),
-    Mean = mean(RSA, na.rm = TRUE),
-    SD = sd(RSA, na.rm = TRUE),
-    SE = SD / sqrt(N),
-    .groups = "drop"
-  ) %>%
-  mutate(across(c(Mean, SD, SE), ~ round(.x, 3)))
-
-print(descriptives_OL_Late_HCvsRSC)
-```
-PLOTTING  OL Late HC vs RSC 
-```{r}
-
-## Additional filters to add the RSComplex
-
-# 1) Removing ROI filter -> we get all 3 ROIs 
-plot_HC_RSC_Complex_Late_OL <- long_parsed %>%
-  filter(
-    str_detect(raw_name, "ol_new_late_w_ol_new_late_")  
-  ) %>%
- 
-
-# Normalize RSComplex names so colors/legend map correctly
-  mutate(
-    ROI = dplyr::recode(ROI,
-                        "Complex" = "RSComplex",
-                        "RS Complex" = "RSComplex",
-                        .default = ROI),
-    
-    # Lock ROI order to ensure consistent plotting/legend
-    ROI = factor(ROI, levels = c("Hippocampus", "RSC", "RSComplex")),
-    # Ensure Hall is ordered for the x-axis
-    Hall = factor(Hall,
-                  levels = c("Cue period",
-                             "1st hallway",
-                             "2nd hallway",
-                             "Goal"))
-  )
-
-## Plotting the 3 ROIs
-# 2) Plot with ribbon for mean ± SE
-ggplot(plot_HC_RSC_Complex_Late_OL,
-       aes(x = Hall,
-           y = RSA,
-           color = ROI,
-           fill = ROI,
-           group = ROI)) +
-  
-  # Ribbon for standard error
-  stat_summary(fun.data = mean_se,
-               geom = "ribbon",
-               alpha = 0.15,
-               color = NA) +
-  
-  # Mean line
-  stat_summary(fun = mean,
-               geom = "line",
-               linewidth = 1) +
-  
-  # Mean points
-  stat_summary(fun = mean,
-               geom = "point",
-               size = 3) +
-  
-  # Custom colors
-  
-  scale_color_manual(values = c(
-    "RSC" = RSC_OL_Late_purple,
-    "Hippocampus" = HC_OL_Late_orange,
-    "RSComplex" = Complex_OL_Late_blue
-  )) +
-  
-  scale_fill_manual(values = c(
-    "RSC" = RSC_OL_Late_purple,
-    "Hippocampus" = HC_OL_Late_orange,
-    "RSComplex" = Complex_OL_Late_blue
-  )) +
-  
-  # Labels
-  labs(x = "Hall",
-       y = "Representational similarity (r)",
-       title = "(2a) OL LATE HC vs RSC vs RSComplex",
-       #subtitle = "(2a) OL EARLY HCvsRSC",
-       color = "ROI",
-       fill = "ROI") +
-  
-  # Clean theme
-  theme_classic(base_size = 14)
-
-```
-2a) NOL Early HCvsRSC
-# Plotting HC, RSC, RSComplex
-
-```{r}
-# (2a) NOL EARLY HC vs RSC 
-
-# 1) Filtering + Subject means
-plot_data <- long_parsed %>%
-  filter(
-    ROI %in% c("RSC", "Hippocampus"),     # ROI filter
-    str_detect(raw_name, "nol_new_early_w_nol_new_early_")  
-  ) %>%
-  group_by(ID, ROI, Hall) %>%
-  # summarise(RSA = mean(RSA, na.rm = TRUE),
-  #           .groups = "drop") %>%
-  
-  # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
-
-print(plot_data)
-
-```
-ANOVA
-```{r}
-
- # ANOVA
-# summary
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
-anova_model <- aov_ez(
-  id = "ID",
-  dv = "RSA",
-  data = plot_data,
-  within = c("ROI", "Hall"),
-  type = 3, # Type III SS (JASP style)
-  anova_table = list(
-    es = "pes"   # partial eta squared
-  )
-)
-
-# ANOVA TABLE
-# anova_table <- anova_model$anova_table
-# print(anova_table)
-# Extract ANOVA table as data frame
-anova_table <- as.data.frame(anova_model$anova_table)
-
-
-# Move row names (effects) into a column safely
-anova_table <- tibble::rownames_to_column(anova_table, var = "Effect")
-
-# Format p-values like JASP
-format_p <- function(p) {
-  if (p < .001) {
-    "< .001"
-  } else {
-    paste0("= ", format(round(p, 3), nsmall = 3))
-  }
-}
-
-# Clean ANOVA table
-niceAnovaTable <- data.frame(
-  Effect = anova_table$Effect,
-  df1    = anova_table[[1]],   # first column = numerator df
-  df2    = anova_table[[2]],   # second column = denominator df
-  F      = round(anova_table$F, 3),
-  p      = sapply(anova_table$`Pr(>F)`, format_p),
-  `η²p`   = round(anova_table$pes, 3) # partial eta-squared
-)
-
-print(niceAnovaTable)
-
-
-```
-DESCRIPTIVES
-```{r}
-###) Descriptives
-descriptives_NOL_Early_HCvsRSC <- plot_data %>%
-  group_by(ROI, Hall) %>%
-  summarise(
-    N = n(),
-    Mean = mean(RSA, na.rm = TRUE),
-    SD = sd(RSA, na.rm = TRUE),
-    SE = SD / sqrt(N),
-    .groups = "drop"
-  ) %>%
-  mutate(across(c(Mean, SD, SE), ~ round(.x, 3)))
-
-print(descriptives_NOL_Early_HCvsRSC)
-```
-PLOTTING NOL Early HC vs RSC vs RScomplex
-```{r}
-
-## Additional filters to add the RSComplex
-
-# 1) Removing ROI filter -> we get all 3 ROIs 
-plot_HC_RSC_Complex_early_NOL <- long_parsed %>%
-  filter(
-    str_detect(raw_name, "nol_new_early_w_nol_new_early_")  
-  ) %>%
- 
-
-# Normalize RSComplex names so colors/legend map correctly
-  mutate(
-    ROI = dplyr::recode(ROI,
-                        "Complex" = "RSComplex",
-                        "RS Complex" = "RSComplex",
-                        .default = ROI),
-    
-    # Lock ROI order to ensure consistent plotting/legend
-    ROI = factor(ROI, levels = c("Hippocampus", "RSC", "RSComplex")),
-    # Ensure Hall is ordered for the x-axis
-    Hall = factor(Hall,
-                  levels = c("Cue period",
-                             "1st hallway",
-                             "2nd hallway",
-                             "Goal"))
-  )
-
-## Plotting the 3 ROIs
-# 2) Plot with ribbon for mean ± SE
-ggplot(plot_HC_RSC_Complex_early_NOL,
-       aes(x = Hall,
-           y = RSA,
-           color = ROI,
-           fill = ROI,
-           group = ROI)) +
-  
-  # Ribbon for standard error
-  stat_summary(fun.data = mean_se,
-               geom = "ribbon",
-               alpha = 0.15,
-               color = NA) +
-  
-  # Mean line
-  stat_summary(fun = mean,
-               geom = "line",
-               linewidth = 1) +
-  
-  # Mean points
-  stat_summary(fun = mean,
-               geom = "point",
-               size = 3) +
-  
-  # Custom colors
-  
-  scale_color_manual(values = c(
-    "RSC" = RSC_NOL_Early_purple,
-    "Hippocampus" = HC_NOL_Early_orange,
-    "RSComplex" = Complex_NOL_Early_blue
-  )) +
-  
-  scale_fill_manual(values = c(
-    "RSC" = RSC_NOL_Early_purple,
-    "Hippocampus" = HC_NOL_Early_orange,
-    "RSComplex" = Complex_NOL_Early_blue
-  )) +
-  
-  # Labels
-  labs(x = "Hall",
-       y = "Representational similarity (r)",
-       title = "(2a) NOL EARLY HC vs RSC vs RSComplex",
-       #subtitle = "(2a) OL EARLY HCvsRSC",
-       color = "ROI",
-       fill = "ROI") +
-  
-  # Clean theme
-  theme_classic(base_size = 14)
-
-```
-2a) NOL LATE HC vs RSC 
-# Plotting NOL Late HC, RSC, RSComplex
-
-```{r}
-# (2a) NOL LATE HC vs RSC 
-
-# 1) Filtering + Subject means
-plot_data <- long_parsed %>%
-  filter(
-    ROI %in% c("RSC", "Hippocampus"),     # ROI filter
-    str_detect(raw_name, "nol_new_late_w_nol_new_late_")  
-  ) %>%
-  group_by(ID, ROI, Hall) %>%
-  # summarise(RSA = mean(RSA, na.rm = TRUE),
-  #           .groups = "drop") %>%
-  
-  # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
-
-print(plot_data)
-
-```
-ANOVA
-```{r}
-
- # ANOVA
-# summary
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
-anova_model <- aov_ez(
-  id = "ID",
-  dv = "RSA",
-  data = plot_data,
-  within = c("ROI", "Hall"),
-  type = 3, # Type III SS (JASP style)
-  anova_table = list(
-    es = "pes"   # partial eta squared
-  )
-)
-
-# ANOVA TABLE
-# anova_table <- anova_model$anova_table
-# print(anova_table)
-# Extract ANOVA table as data frame
-anova_table <- as.data.frame(anova_model$anova_table)
-
-
-# Move row names (effects) into a column safely
-anova_table <- tibble::rownames_to_column(anova_table, var = "Effect")
-
-# Format p-values like JASP
-format_p <- function(p) {
-  if (p < .001) {
-    "< .001"
-  } else {
-    paste0("= ", format(round(p, 3), nsmall = 3))
-  }
-}
-
-# Clean ANOVA table
-niceAnovaTable <- data.frame(
-  Effect = anova_table$Effect,
-  df1    = anova_table[[1]],   # first column = numerator df
-  df2    = anova_table[[2]],   # second column = denominator df
-  F      = round(anova_table$F, 3),
-  p      = sapply(anova_table$`Pr(>F)`, format_p),
-  `η²p`   = round(anova_table$pes, 3) # partial eta-squared
-)
-
-print(niceAnovaTable)
-
-
-```
-DESCRIPTIVES
-```{r}
-###) Descriptives
-descriptives_NOL_Late_HCvsRSC <- plot_data %>%
-  group_by(ROI, Hall) %>%
-  summarise(
-    N = n(),
-    Mean = mean(RSA, na.rm = TRUE),
-    SD = sd(RSA, na.rm = TRUE),
-    SE = SD / sqrt(N),
-    .groups = "drop"
-  ) %>%
-  mutate(across(c(Mean, SD, SE), ~ round(.x, 3)))
-
-print(descriptives_NOL_Late_HCvsRSC)
-```
-# PLOTTING NOL LATE HC vs RSC vs RSComplex
-```{r}
-
-## Additional filters to add the RSComplex
-
-# 1) Removing ROI filter -> we get all 3 ROIs 
-plot_HC_RSC_Complex_late_NOL <- long_parsed %>%
-  filter(
-    str_detect(raw_name, "nol_new_late_w_nol_new_late_")  
-  ) %>%
- 
-
-# Normalize RSComplex names so colors/legend map correctly
-  mutate(
-    ROI = dplyr::recode(ROI,
-                        "Complex" = "RSComplex",
-                        "RS Complex" = "RSComplex",
-                        .default = ROI),
-    
-    # Lock ROI order to ensure consistent plotting/legend
-    ROI = factor(ROI, levels = c("Hippocampus", "RSC", "RSComplex")),
-    # Ensure Hall is ordered for the x-axis
-    Hall = factor(Hall,
-                  levels = c("Cue period",
-                             "1st hallway",
-                             "2nd hallway",
-                             "Goal"))
-  )
-
-## Plotting the 3 ROIs
-# 2) Plot with ribbon for mean ± SE
-
-ggplot(plot_HC_RSC_Complex_late_NOL,
-       aes(x = Hall,
-           y = RSA,
-           color = ROI,
-           fill = ROI,
-           group = ROI)) +
-  
-  # Ribbon for standard error
-  stat_summary(fun.data = mean_se,
-               geom = "ribbon",
-               alpha = 0.15,
-               color = NA) +
-  
-  # Mean line
-  stat_summary(fun = mean,
-               geom = "line",
-               linewidth = 1) +
-  
-  # Mean points
-  stat_summary(fun = mean,
-               geom = "point",
-               size = 3) +
-  
-  # Custom colors
-  
-  scale_color_manual(values = c(
-    "RSC" = RSC_NOL_Late_purple,
-    "Hippocampus" = HC_NOL_Late_orange,
-    "RSComplex" = Complex_NOL_Late_blue
-  )) +
-  
-  scale_fill_manual(values = c(
-    "RSC" = RSC_NOL_Late_purple,
-    "Hippocampus" = HC_NOL_Late_orange,
-      "RSComplex" = Complex_NOL_Late_blue
-  )) +
-  
-  # Labels
-  labs(x = "Hall",
-       y = "Representational similarity (r)",
-       title = "(2a) NOL LATE HC vs RSC vs RSComplex",
-       #subtitle = "(2a) OL EARLY HCvsRSC",
-       color = "ROI",
-       fill = "ROI") +
-  
-  # Clean theme
-  theme_classic(base_size = 14)
-```
 **************************
 **************************
 **************************
 THE CODE RUNS BUT DOESN'T PRODUCE ANY PLOTS BELOW THIS LINE
 This is the last one: title = "(2a) NOL LATE HC vs RSC vs RSComplex",
 
+# it works now 2/06/26
 **************************
 HC vs RSComplex
 **************************
@@ -2155,38 +1384,31 @@ HC vs RSComplex
 (2a) OL EARLY HC vs Complex
 
 ```{r}
-
+#  Repeated measures ANOVA
 # 1) Filtering + Subject means
-plot_data <- long_parsed %>%
+plot_data_OL_Early_HCvsComplex <- long_parsed %>%
   filter(
     ROI %in% c("Complex", "Hippocampus"),     # ROI filter
     str_detect(raw_name, "ol_new_early_w_ol_new_early_")  # <-- NEW precise filter (we can forget about "learningStage" and "overlappicity" filters atm)
   ) %>%
   group_by(ID, ROI, Hall) %>%
-  # summarise(RSA = mean(RSA, na.rm = TRUE),
-  #           .groups = "drop") %>%
-  
-  # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
+  summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop")
 
-print(plot_data)
+# ✅ FAIL FAST HERE
+stopifnot(nrow(plot_data_OL_Early_HCvsComplex) > 0)
+
+print(plot_data_OL_Early_HCvsComplex)
 
 ```
 ANOVA
 ```{r}
 
  # ANOVA
-# summary
-# I'll have to relabel 'anova_model', 'anova_table', etc if I don't want these data to be overwritten
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
-anova_model <- aov_ez(
+
+anova_model_OL_Early_HCvsComplex <- aov_ez(
   id = "ID",
   dv = "RSA",
-  data = plot_data,
+  data = plot_data_OL_Early_HCvsComplex,
   within = c("ROI", "Hall"),
   type = 3, # Type III SS (JASP style)
   anova_table = list(
@@ -2194,43 +1416,101 @@ anova_model <- aov_ez(
   )
 )
 
-# ANOVA TABLE
-# anova_table <- anova_model$anova_table
-# print(anova_table)
 # Extract ANOVA table as data frame
-anova_table <- as.data.frame(anova_model$anova_table)
+anova_table_OL_Early_HCvsComplex <- as.data.frame(anova_model_OL_Early_HCvsComplex$anova_table) |>
+  tibble::rownames_to_column(var = "Effect")
 
-
-# Move row names (effects) into a column safely
-anova_table <- tibble::rownames_to_column(anova_table, var = "Effect")
 
 # Format p-values like JASP
 format_p <- function(p) {
-  if (p < .001) {
-    "< .001"
-  } else {
-    paste0("= ", format(round(p, 3), nsmall = 3))
-  }
+  if (p < .001) "< .001"
+  else paste0("= ", format(round(p, 3), nsmall = 3))
 }
 
+
 # Clean ANOVA table
-niceAnovaTable <- data.frame(
-  Effect = anova_table$Effect,
-  df1    = anova_table[[1]],   # first column = numerator df
-  df2    = anova_table[[2]],   # second column = denominator df
-  F      = round(anova_table$F, 3),
-  p      = sapply(anova_table$`Pr(>F)`, format_p),
-  `η²p`   = round(anova_table$pes, 3) # partial eta-squared
+ 
+niceAnovaTable_OL_Early_HCvsComplex <- data.frame(
+  Effect = anova_table_OL_Early_HCvsComplex$Effect,
+  df1    = anova_table_OL_Early_HCvsComplex[[1]],
+  df2    = anova_table_OL_Early_HCvsComplex[[2]],
+  F      = round(anova_table_OL_Early_HCvsComplex$F, 3),
+  p      = sapply(anova_table_OL_Early_HCvsComplex$`Pr(>F)`, format_p),
+  `η²p`  = round(anova_table_OL_Early_HCvsComplex$pes, 3)
 )
 
-print(niceAnovaTable)
-
+print(niceAnovaTable_OL_Early_HCvsComplex)
 
 ```
+* POST-HOCS
+```{r}
+# NO INTERACTION
+
+# Only if interaction is relevant / you want simple effects
+emm_OL_Early_HCvsComplex <- emmeans(anova_model_OL_Early_HCvsComplex, ~ Hall | ROI)
+
+posthoc_OL_Early_HCvsComplex <- pairs(emm_OL_Early_HCvsComplex, adjust = "holm")
+
+print(posthoc_OL_Early_HCvsComplex)
+
+
+################
+
+# 4 main effect of HAll
+emm_Hall_OL_Early_HCvsComplex <- emmeans(anova_model_OL_Early_HCvsComplex, ~ Hall)
+
+posthoc_OL_Early_HCvsComplex <- pairs(emm_Hall_OL_Early_HCvsComplex, adjust = "holm")
+
+holm_table_OL_Early_HCvsComplex <- summary(posthoc_OL_Early_HCvsComplex) |>
+  as.data.frame() |>
+  mutate(
+    estimate = round(estimate, 3),
+    SE       = round(SE, 3),
+    t        = round(t.ratio, 2),
+
+    cohen_d  = round(abs(t.ratio) / sqrt(df + 1), 3),
+
+    pHolms = case_when(
+      p.value < .001 ~ "< .001",
+      TRUE ~ paste0("= ", sub("^0\\.", ".", sprintf("%.3f", round(p.value, 3))))
+    ),
+
+    sig = case_when(
+      p.value < .001 ~ "***",
+      p.value < .01  ~ "**",
+      p.value < .05  ~ "*",
+      TRUE ~ ""
+    )
+  )
+
+print(holm_table_OL_Early_HCvsComplex)
+
+# # If significant interaction (Note no longer significant with GG sphericity correction)
+# emm_interaction <- emmeans(anova_model_NOL_RSComplex, ~ learningStage * Hall)
+# 
+# # Holm correction
+# posthoc_holm_inter <- pairs(emm_interaction, adjust = "holm")
+# 
+# holm_table_NOL_RSComplex_Inter <- summary(posthoc_holm_inter) |>
+#   as.data.frame() |>
+#   mutate(
+#     estimate = round(estimate, 3),
+#     SE = round(SE, 3),
+#     cohen_d = round(estimate / (SE * sqrt(2)), 3),  
+#     t = round(t.ratio, 2),
+#     pHolms = ifelse(p.value < .001,
+#                "< 0.001",
+#                paste0("= ", round(p.value, 3)))
+#   )
+# 
+# print(holm_table_NOL_RSComplex_Inter)
+
+```
+
 DESCRIPTIVES
 ```{r}
 ###) Descriptives
-descriptives_OL_Early_HCvsComplex <- plot_data %>%
+descriptives_OL_Early_HCvsComplex <- plot_data_OL_Early_HCvsComplex %>%
   group_by(ROI, Hall) %>%
   summarise(
     N = n(),
@@ -2243,66 +1523,66 @@ descriptives_OL_Early_HCvsComplex <- plot_data %>%
 
 print(descriptives_OL_Early_HCvsComplex)
 ```
-PLOTTING OL EARLY HC vs RSComplex
+# PLOTTING OL EARLY HC vs RSComplex
 ```{r}
-# # 1) Make sure ROI is a factor following the order I want and not the by-default alphabetical one
-# plot_data$ROI <- factor(plot_data$ROI, levels = c("Hippocampus", "Complex"))
-# # 2) Plot with ribbon for mean ± SE
-# ggplot(plot_data,
-#        aes(x = Hall,
-#            y = RSA,
-#            color = ROI,
-#            fill = ROI,
-#            group = ROI)) +
-#   
-#   # Ribbon for standard error
-#   stat_summary(fun.data = mean_se,
-#                geom = "ribbon",
-#                alpha = 0.15,
-#                color = NA) +
-#   
-#   # Mean line
-#   stat_summary(fun = mean,
-#                geom = "line",
-#                linewidth = 1) +
-#   
-#   # Mean points
-#   stat_summary(fun = mean,
-#                geom = "point",
-#                size = 3) +
-#   
-#   # Custom colors
-#   
-#   scale_color_manual(values = c(
-#     "Hippocampus" = HC_OL_Early_orange,
-#     "Complex" = Complex_OL_Early_blue
-#   ),
-#   
-#    labels = c("Hippocampus", "RSComplex")) +
-#   
-#   scale_fill_manual(values = c(
-#     "Hippocampus" = HC_OL_Early_orange,
-#     "Complex" = Complex_OL_Early_blue
-#   ),
-#   
-#   labels = c("Hippocampus", "RSComplex")) +
-#   
-#   # Labels
-#   labs(x = "Hall",
-#        y = "Representational similarity (r)",
-#        title = "(2a) OL EARLY HC vs RSComplex",
-#        #subtitle = "(2a) OL EARLY HCvsComplex",
-#        color = "ROI",
-#        fill = "ROI") +
-#   
-#   # Clean theme
-#   theme_classic(base_size = 14)
+# 1) Make sure ROI is a factor following the order I want and not the by-default alphabetical one
+#plot_data$ROI <- factor(plot_data$ROI, levels = c("Hippocampus", "Complex"))
+# 2) Plot with ribbon for mean ± SE
+ggplot(plot_data_OL_Early_HCvsComplex,
+       aes(x = Hall,
+           y = RSA,
+           color = ROI,
+           fill = ROI,
+           group = ROI)) +
+
+  # Ribbon for standard error
+  stat_summary(fun.data = mean_se,
+               geom = "ribbon",
+               alpha = 0.15,
+               color = NA) +
+
+  # Mean line
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+
+  # Mean points
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3) +
+
+  # Custom colors
+
+  scale_color_manual(values = c(
+    "Hippocampus" = HC_OL_Early_orange,
+    "Complex" = Complex_OL_Early_blue
+  ),
+
+   labels = c("Hippocampus", "RSComplex")) +
+
+  scale_fill_manual(values = c(
+    "Hippocampus" = HC_OL_Early_orange,
+    "Complex" = Complex_OL_Early_blue
+  ),
+
+  labels = c("Hippocampus", "RSComplex")) +
+
+  # Labels
+  labs(x = "Hall",
+       y = "Representational similarity (r)",
+       title = "(2a) OL EARLY HC vs RSComplex",
+       #subtitle = "(2a) OL EARLY HCvsComplex",
+       color = "ROI",
+       fill = "ROI") +
+
+  # Clean theme
+  theme_classic(base_size = 14)
 
 ```
-2a) OL Late HC vs Complex 
+# 2a) OL Late HC vs Complex 
 
 ```{r}
-# (2a) OL EARLY HC vs Complex
+# (2a) OL LATE HC vs Complex
 
 # 1) Filtering + Subject means
 plot_data <- long_parsed %>%
@@ -2311,25 +1591,29 @@ plot_data <- long_parsed %>%
     str_detect(raw_name, "ol_new_late_w_ol_new_late_")  
   ) %>%
   group_by(ID, ROI, Hall) %>%
+  summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop")
   # summarise(RSA = mean(RSA, na.rm = TRUE),
   #           .groups = "drop") %>%
   
   # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
+  # mutate(Hall = factor(Hall,
+  #                      levels = c("Cue period",
+  #                                 "1st hallway",
+  #                                 "2nd hallway",
+  #                                 "Goal")))
+
+# ✅ FAIL FAST HERE
+stopifnot(nrow(plot_data) > 0)
 
 print(plot_data)
 
 ```
-ANOVA
+# ANOVA
 ```{r}
 
  # ANOVA
 # summary
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
+# options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
 anova_model <- aov_ez(
   id = "ID",
   dv = "RSA",
@@ -2374,9 +1658,14 @@ print(niceAnovaTable)
 
 
 ```
+* POST-HOCS
+```{r}
+
+# NO INTERACTION
+```
 DESCRIPTIVES
 ```{r}
-###) Descriptives
+#) Descriptives
 descriptives_OL_Late_HCvsComplex <- plot_data %>%
   group_by(ROI, Hall) %>%
   summarise(
@@ -2392,60 +1681,63 @@ print(descriptives_OL_Late_HCvsComplex)
 ```
 PLOTTING OL Late HC vs RSComplex 
 ```{r}
-# # 1) Make sure ROI is a factor following the order I want and not the by-default alphabetical one
+# 1) Make sure ROI is a factor following the order I want and not the by-default alphabetical one
 # plot_data$ROI <- factor(plot_data$ROI, levels = c("Hippocampus", "Complex"))
-# # 2) Plot with ribbon for mean ± SE
-# ggplot(plot_data,
-#        aes(x = Hall,
-#            y = RSA,
-#            color = ROI,
-#            fill = ROI,
-#            group = ROI)) +
-#   
-#   # Ribbon for standard error
-#   stat_summary(fun.data = mean_se,
-#                geom = "ribbon",
-#                alpha = 0.15,
-#                color = NA) +
-#   
-#   # Mean line
-#   stat_summary(fun = mean,
-#                geom = "line",
-#                linewidth = 1) +
-#   
-#   # Mean points
-#   stat_summary(fun = mean,
-#                geom = "point",
-#                size = 3) +
-#   
-#   # Custom colors
-#   
-#   scale_color_manual(values = c(
-#     "Hippocampus" = HC_OL_Late_orange, 
-#     "Complex" = Complex_OL_Late_blue
-#    
-#   ),
-#   labels = c("Hippocampus", "RSComplex")) +
-#   
-#   scale_fill_manual(values = c(
-#     "Hippocampus" = HC_OL_Late_orange,
-#     "Complex" = Complex_OL_Late_blue
-#   ),
-#   labels = c("Hippocampus", "RSComplex")) +
-#   
-#   # Labels
-#   labs(x = "Hall",
-#        y = "Representational similarity (r)",
-#        title = "(2a) OL LATE HC vs RSComplex",
-#        #subtitle = "(2a) OL EARLY HCvsComplex",
-#        color = "ROI",
-#        fill = "ROI") +
-#   
-#   # Clean theme
-#   theme_classic(base_size = 14)
+# 2) Plot with ribbon for mean ± SE
+ggplot(plot_data,
+       aes(x = Hall,
+           y = RSA,
+           color = ROI,
+           fill = ROI,
+           group = ROI)) +
+
+  # Ribbon for standard error
+  stat_summary(fun.data = mean_se,
+               geom = "ribbon",
+               alpha = 0.15,
+               color = NA) +
+
+  # Mean line
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+
+  # Mean points
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3) +
+
+  # Custom colors
+
+  scale_color_manual(values = c(
+    "Hippocampus" = HC_OL_Late_orange,
+    "Complex" = Complex_OL_Late_blue
+
+  ),
+  labels = c("Hippocampus", "RSComplex")) +
+
+  scale_fill_manual(values = c(
+    "Hippocampus" = HC_OL_Late_orange,
+    "Complex" = Complex_OL_Late_blue
+  ),
+  labels = c("Hippocampus", "RSComplex")) +
+
+  # Labels
+  labs(x = "Hall",
+       y = "Representational similarity (r)",
+       title = "(2a) OL LATE HC vs RSComplex",
+       #subtitle = "(2a) OL EARLY HCvsComplex",
+       color = "ROI",
+       fill = "ROI") +
+
+  # Clean theme
+  theme_classic(base_size = 14)
 
 ```
-2a) NOL Early HC vs Complex
+
+2a) NOL Early HC vs Complex 
+
+***
 
 ```{r}
 # (2a) NOL EARLY HC vs RSC 
@@ -2457,15 +1749,19 @@ plot_data <- long_parsed %>%
     str_detect(raw_name, "nol_new_early_w_nol_new_early_")  
   ) %>%
   group_by(ID, ROI, Hall) %>%
+  summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop")
   # summarise(RSA = mean(RSA, na.rm = TRUE),
   #           .groups = "drop") %>%
   
   # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
+  # mutate(Hall = factor(Hall,
+  #                      levels = c("Cue period",
+  #                                 "1st hallway",
+  #                                 "2nd hallway",
+  #                                 "Goal")))
+
+# ✅ FAIL FAST HERE
+stopifnot(nrow(plot_data) > 0)
 
 print(plot_data)
 
@@ -2475,7 +1771,7 @@ ANOVA
 
  # ANOVA
 # summary
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
+# options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
 anova_model <- aov_ez(
   id = "ID",
   dv = "RSA",
@@ -2518,6 +1814,121 @@ niceAnovaTable <- data.frame(
 
 print(niceAnovaTable)
 
+
+```
+* POST-HOCS
+
+```{r}
+
+### ------> POSTHOC COHEN'S D IN R ARE WRONG ****************************************************
+# Estimated marginal means for ALL 8 cells (ROI × Hall)
+#emm_interaction <- emmeans(anova_model, ~ ROI * Hall)
+
+# Holm correction across all 28 comparisons
+#posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+
+# Estimated marginal means (EMMs) for ALL 8 cells (ROI × Hall)
+emm_interaction <- emmeans(anova_model, ~ ROI * Hall)
+
+
+# Pairwise comparisons (Holm across 28)
+posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+
+holm_table <- summary(posthoc_holm) |>
+  as.data.frame() |>
+  mutate(
+    estimate = round(estimate, 3),
+    SE       = round(SE, 3),
+    t        = round(t.ratio, 2),
+
+    # ✅ Robust within-subject Cohen's d (JASP-approx)
+    cohen_d  = round(abs(t.ratio) / sqrt(df + 1), 3),
+
+    sig = case_when(
+      p.value < .001 ~ "***",
+      p.value < .01  ~ "**",
+      p.value < .05  ~ "*",
+      TRUE ~ ""
+    ),
+
+    pValueFinal = case_when(
+      p.value < .001 ~ "< .001",
+      TRUE ~ paste0("= ", sub("^0\\.", ".", sprintf("%.3f", round(p.value, 3))))
+    )
+  ) |>
+  select(contrast, estimate, SE, df, t, cohen_d, pValueFinal, sig)
+
+print(holm_table, row.names = FALSE)
+
+
+#####################
+######################
+
+# Estimated marginal means for ALL 8 cells (ROI × Hall)
+# emm_interaction <- emmeans(anova_model, ~ ROI * Hall)
+# 
+# # Holm correction across all 28 comparisons
+# posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+# 
+# holm_table <- summary(posthoc_holm) |>
+#   as.data.frame() |>
+#   mutate(
+#     estimate = round(estimate, 3),
+#     SE       = round(SE, 3),
+#     t        = round(t.ratio, 2),
+# 
+#     # ✅ JASP-equivalent Cohen's d (within-subject)
+#     cohen_d  = round(t.ratio / sqrt(df + 1), 3),
+# 
+#     # ✅ significance stars from Holm-adjusted p
+#     sig = case_when(
+#       p.value < .001 ~ "***",
+#       p.value < .01  ~ "**",
+#       p.value < .05  ~ "*",
+#       TRUE ~ ""
+#     ),
+# 
+#     # ✅ APA/JASP p formatting
+#     pValueFinal = case_when(
+#       p.value < .001 ~ "< .001",
+#       TRUE ~ paste0("= ", sub("^0\\.", ".", sprintf("%.3f", round(p.value, 3))))
+#     )
+#   ) |>
+#   select(contrast, estimate, SE, df, t, cohen_d, pValueFinal, sig)
+
+###################################################################
+# Estimated marginal means for ALL 8 cells (ROI × Hall)
+# emm_interaction <- emmeans(anova_model, ~ ROI * Hall)
+# 
+# # Holm correction across all 28 comparisons
+# posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+# 
+# holm_table <- summary(posthoc_holm) |>
+#   as.data.frame() |>
+#   mutate(
+#     estimate = round(estimate, 3),
+#     SE       = round(SE, 3),
+#     cohen_d  = round(estimate / (SE * sqrt(2)), 3),
+#     t        = round(t.ratio, 2),
+# 
+#     # ✅ Significance stars (from Holm-adjusted p-values)
+#     sig = case_when(
+#       p.value < .001 ~ "***",
+#       p.value < .01  ~ "**",
+#       p.value < .05  ~ "*",
+#       TRUE ~ ""
+#     ),
+# 
+#     # ✅ APA/JASP-style p-values (ROUNDED, no leading zero)
+#     pValueFinal = case_when(
+#       p.value < .001 ~ "< .001",
+#       TRUE ~ paste0("= ", sub("^0\\.", ".", sprintf("%.3f", round(p.value, 3))))
+#     )
+#   ) |>
+#   select(contrast, estimate, SE, df, t, cohen_d, pValueFinal, sig)
+# 
+# # Print clean table
+# print(holm_table, row.names = FALSE)
 
 ```
 DESCRIPTIVES
@@ -2538,63 +1949,62 @@ print(descriptives_NOL_Early_HCvsComplex)
 ```
 PLOTTING NOL Early HC vs RSComplex
 ```{r}
-# # 1) Make sure ROI is a factor following the order I want and not the by-default alphabetical one
+# 1) Make sure ROI is a factor following the order I want and not the by-default alphabetical one
 # plot_data$ROI <- factor(plot_data$ROI, levels = c("Hippocampus", "Complex"))
-# # 2) Plot with ribbon for mean ± SE
-# ggplot(plot_data,
-#        aes(x = Hall,
-#            y = RSA,
-#            color = ROI,
-#            fill = ROI,
-#            group = ROI)) +
-#   
-#   # Ribbon for standard error
-#   stat_summary(fun.data = mean_se,
-#                geom = "ribbon",
-#                alpha = 0.15,
-#                color = NA) +
-#   
-#   # Mean line
-#   stat_summary(fun = mean,
-#                geom = "line",
-#                linewidth = 1) +
-#   
-#   # Mean points
-#   stat_summary(fun = mean,
-#                geom = "point",
-#                size = 3) +
-#   
-#   # Custom colors
-#   
-#   scale_color_manual(values = c(
-#     "Hippocampus" = HC_NOL_Early_orange,
-#     "Complex" = Complex_NOL_Early_blue
-#     
-#   ),
-#   labels = c("Hippocampus", "RSComplex")) +
-#   
-#   scale_fill_manual(values = c(
-#     "Hippocampus" = HC_NOL_Early_orange,
-#     "Complex" = Complex_NOL_Early_blue
-#   
-#   ),
-#   
-#   labels = c("Hippocampus", "RSComplex")) +
-#   
-#   # Labels
-#   labs(x = "Hall",
-#        y = "Representational similarity (r)",
-#        title = "(2a) NOL EARLY HC vs RSComplex",
-#        #subtitle = "(2a) OL EARLY HCvsComplex",
-#        color = "ROI",
-#        fill = "ROI") +
-#   
-#   # Clean theme
-#   theme_classic(base_size = 14)
+# 2) Plot with ribbon for mean ± SE
+ggplot(plot_data,
+       aes(x = Hall,
+           y = RSA,
+           color = ROI,
+           fill = ROI,
+           group = ROI)) +
+
+  # Ribbon for standard error
+  stat_summary(fun.data = mean_se,
+               geom = "ribbon",
+               alpha = 0.15,
+               color = NA) +
+
+  # Mean line
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+
+  # Mean points
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3) +
+
+  # Custom colors
+
+  scale_color_manual(values = c(
+    "Hippocampus" = HC_NOL_Early_orange,
+    "Complex" = Complex_NOL_Early_blue
+
+  ),
+  labels = c("Hippocampus", "RSComplex")) +
+
+  scale_fill_manual(values = c(
+    "Hippocampus" = HC_NOL_Early_orange,
+    "Complex" = Complex_NOL_Early_blue
+
+  ),
+
+  labels = c("Hippocampus", "RSComplex")) +
+
+  # Labels
+  labs(x = "Hall",
+       y = "Representational similarity (r)",
+       title = "(2a) NOL EARLY HC vs RSComplex",
+       #subtitle = "(2a) OL EARLY HCvsComplex",
+       color = "ROI",
+       fill = "ROI") +
+
+  # Clean theme
+  theme_classic(base_size = 14)
 
 ```
 2a) NOL LATE HC vs Complex 
-
 
 ```{r}
 # (2a) NOL LATE HC vs Complex 
@@ -2606,15 +2016,19 @@ plot_data <- long_parsed %>%
     str_detect(raw_name, "nol_new_late_w_nol_new_late_")  
   ) %>%
   group_by(ID, ROI, Hall) %>%
+  summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop")
   # summarise(RSA = mean(RSA, na.rm = TRUE),
   #           .groups = "drop") %>%
   
   # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
+  # mutate(Hall = factor(Hall,
+  #                      levels = c("Cue period",
+  #                                 "1st hallway",
+  #                                 "2nd hallway",
+  #                                 "Goal")))
+
+# ✅ FAIL FAST HERE
+stopifnot(nrow(plot_data) > 0)
 
 print(plot_data)
 
@@ -2624,7 +2038,7 @@ ANOVA
 
  # ANOVA
 # summary
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
+# options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
 anova_model <- aov_ez(
   id = "ID",
   dv = "RSA",
@@ -2669,6 +2083,12 @@ print(niceAnovaTable)
 
 
 ```
+* POST-HOCS
+```{r}
+
+# NO INTERACTION
+```
+
 DESCRIPTIVES
 ```{r}
 ###) Descriptives
@@ -2687,67 +2107,69 @@ print(descriptives_NOL_Late_HCvsComplex)
 ```
 PLOTTING NOL LATE HC vs Complex
 ```{r}
-# # 1) Make sure ROI is a factor following the order I want and not the by-default alphabetical one
+# 1) Make sure ROI is a factor following the order I want and not the by-default alphabetical one
 # plot_data$ROI <- factor(plot_data$ROI, levels = c("Hippocampus", "Complex"))
-# 
-# # 2) Plot with ribbon for mean ± SE
-# 
-# ggplot(plot_data,
-#        aes(x = Hall,
-#            y = RSA,
-#            color = ROI,
-#            fill = ROI,
-#            group = ROI)) +
-#   
-#   # Ribbon for standard error
-#   stat_summary(fun.data = mean_se,
-#                geom = "ribbon",
-#                alpha = 0.15,
-#                color = NA) +
-#   
-#   # Mean line
-#   stat_summary(fun = mean,
-#                geom = "line",
-#                linewidth = 1) +
-#   
-#   # Mean points
-#   stat_summary(fun = mean,
-#                geom = "point",
-#                size = 3) +
-#   
-#   # Custom colors
-#   
-#   scale_color_manual(values = c(
-#     "Hippocampus" = HC_NOL_Late_orange,
-#     "Complex" = Complex_NOL_Late_blue
-# 
-#   ), 
-#   
-#   labels = c("Hippocampus", "RSComplex")) +
-#   scale_fill_manual(values = c(
-#     "Hippocampus" = HC_NOL_Late_orange,
-#     "Complex" = Complex_NOL_Late_blue
-# 
-#   ),
-#   labels = c("Hippocampus", "RSComplex")) +
-#   
-#   # Labels
-#   labs(x = "Hall",
-#        y = "Representational similarity (r)",
-#        title = "(2a) NOL LATE HC vs RSComplex",
-#        #subtitle = "(2a) OL EARLY HCvsComplex",
-#        color = "ROI",
-#        fill = "ROI") +
-#   
-#   # Clean theme
-#   theme_classic(base_size = 14)
+
+# 2) Plot with ribbon for mean ± SE
+
+ggplot(plot_data,
+       aes(x = Hall,
+           y = RSA,
+           color = ROI,
+           fill = ROI,
+           group = ROI)) +
+
+  # Ribbon for standard error
+  stat_summary(fun.data = mean_se,
+               geom = "ribbon",
+               alpha = 0.15,
+               color = NA) +
+
+  # Mean line
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+
+  # Mean points
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3) +
+
+  # Custom colors
+
+  scale_color_manual(values = c(
+    "Hippocampus" = HC_NOL_Late_orange,
+    "Complex" = Complex_NOL_Late_blue
+
+  ),
+
+  labels = c("Hippocampus", "RSComplex")) +
+  scale_fill_manual(values = c(
+    "Hippocampus" = HC_NOL_Late_orange,
+    "Complex" = Complex_NOL_Late_blue
+
+  ),
+  labels = c("Hippocampus", "RSComplex")) +
+
+  # Labels
+  labs(x = "Hall",
+       y = "Representational similarity (r)",
+       title = "(2a) NOL LATE HC vs RSComplex",
+       #subtitle = "(2a) OL EARLY HCvsComplex",
+       color = "ROI",
+       fill = "ROI") +
+
+  # Clean theme
+  theme_classic(base_size = 14)
 ```
 **************************************
-RSC vs RSComplex
+RSC vs RSComplex ***
 **************************************
+-----------------------------------------------------------------
+
 (2a) OL EARLY RSC vs Complex
 
-
+***
 ```{r}
 
 # 1) Filtering + Subject means
@@ -2757,15 +2179,19 @@ plot_data <- long_parsed %>%
     str_detect(raw_name, "ol_new_early_w_ol_new_early_")  
   ) %>%
   group_by(ID, ROI, Hall) %>%
+  summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop")
   # summarise(RSA = mean(RSA, na.rm = TRUE),
   #           .groups = "drop") %>%
   
   # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
+  # mutate(Hall = factor(Hall,
+  #                      levels = c("Cue period",
+  #                                 "1st hallway",
+  #                                 "2nd hallway",
+  #                                 "Goal")))
+
+# ✅ FAIL FAST HERE
+stopifnot(nrow(plot_data) > 0)
 
 print(plot_data)
 
@@ -2776,8 +2202,8 @@ ANOVA
  # ANOVA
 # summary
 # I'll have to relabel 'anova_model', 'anova_table', etc if I don't want these data to be overwritten
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
-anova_model <- aov_ez(
+# options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
+  anova_model <- aov_ez(
   id = "ID",
   dv = "RSA",
   data = plot_data,
@@ -2820,6 +2246,49 @@ niceAnovaTable <- data.frame(
 print(niceAnovaTable)
 
 
+```
+* POST-HOCS
+```{r}
+
+### ------> POSTHOC COHEN'S D IN R ARE WRONG ****************************************************
+# Estimated marginal means for ALL 8 cells (ROI × Hall)
+#emm_interaction <- emmeans(anova_model, ~ ROI * Hall)
+
+# Holm correction across all 28 comparisons
+#posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+
+# Estimated marginal means (EMMs) for ALL 8 cells (ROI × Hall)
+emm_interaction <- emmeans(anova_model, ~ ROI * Hall)
+
+
+# Pairwise comparisons (Holm across 28)
+posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+
+holm_table <- summary(posthoc_holm) |>
+  as.data.frame() |>
+  mutate(
+    estimate = round(estimate, 3),
+    SE       = round(SE, 3),
+    t        = round(t.ratio, 2),
+
+    # ✅ Robust within-subject Cohen's d (JASP-approx)
+    cohen_d  = round(abs(t.ratio) / sqrt(df + 1), 3),
+
+    sig = case_when(
+      p.value < .001 ~ "***",
+      p.value < .01  ~ "**",
+      p.value < .05  ~ "*",
+      TRUE ~ ""
+    ),
+
+    pValueFinal = case_when(
+      p.value < .001 ~ "< .001",
+      TRUE ~ paste0("= ", sub("^0\\.", ".", sprintf("%.3f", round(p.value, 3))))
+    )
+  ) |>
+  select(contrast, estimate, SE, df, t, cohen_d, pValueFinal, sig)
+
+print(holm_table, row.names = FALSE)
 ```
 DESCRIPTIVES
 ```{r}
@@ -2840,64 +2309,65 @@ print(descriptives_OL_Early_RSCvsComplex)
 PLOTTING OL EARLY RSC vs Complex
 ```{r}
 
-# # 1) Make sure ROI is a factor following the order I want and not the by-default alphabetical one
+# 1) Make sure ROI is a factor following the order I want and not the by-default alphabetical one
 # plot_data$ROI <- factor(plot_data$ROI, levels = c("RSC", "Complex"))
-# 
-# # 2) Plot with ribbon for mean ± SE
-# ggplot(plot_data,
-#        aes(x = Hall,
-#            y = RSA,
-#            color = ROI,
-#            fill = ROI,
-#            group = ROI)) +
-#   
-#   # Ribbon for standard error
-#   stat_summary(fun.data = mean_se,
-#                geom = "ribbon",
-#                alpha = 0.15,
-#                color = NA) +
-#   
-#   # Mean line
-#   stat_summary(fun = mean,
-#                geom = "line",
-#                linewidth = 1) +
-#   
-#   # Mean points
-#   stat_summary(fun = mean,
-#                geom = "point",
-#                size = 3) +
-#   
-#   # Custom colors
-#   
-#   scale_color_manual(values = c(
-#     "RSC" = RSC_OL_Early_purple,
-#     "Complex" = Complex_OL_Early_blue
-#     
-#   ),
-#    labels = c("RSC", "RSComplex")) +
-#   
-#   scale_fill_manual(values = c(
-#     "RSC" = RSC_OL_Early_purple,
-#     "Complex" = Complex_OL_Early_blue
-#     
-#   ),
-#   
-#   labels = c("RSC", "RSComplex")) +
-#   
-#   # Labels
-#   labs(x = "Hall",
-#        y = "Representational similarity (r)",
-#        title = "(2a) OL EARLY RSC vs Complex",
-#        #subtitle = "(2a) OL EARLY RSCvsComplex",
-#        color = "ROI",
-#        fill = "ROI") +
-#   
-#   # Clean theme
-#   theme_classic(base_size = 14)
+
+# 2) Plot with ribbon for mean ± SE
+ggplot(plot_data,
+       aes(x = Hall,
+           y = RSA,
+           color = ROI,
+           fill = ROI,
+           group = ROI)) +
+
+  # Ribbon for standard error
+  stat_summary(fun.data = mean_se,
+               geom = "ribbon",
+               alpha = 0.15,
+               color = NA) +
+
+  # Mean line
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+
+  # Mean points
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3) +
+
+  # Custom colors
+
+  scale_color_manual(values = c(
+    "RSC" = RSC_OL_Early_purple,
+    "Complex" = Complex_OL_Early_blue
+
+  ),
+   labels = c("RSC", "RSComplex")) +
+
+  scale_fill_manual(values = c(
+    "RSC" = RSC_OL_Early_purple,
+    "Complex" = Complex_OL_Early_blue
+
+  ),
+
+  labels = c("RSC", "RSComplex")) +
+
+  # Labels
+  labs(x = "Hall",
+       y = "Representational similarity (r)",
+       title = "(2a) OL EARLY RSC vs Complex",
+       #subtitle = "(2a) OL EARLY RSCvsComplex",
+       color = "ROI",
+       fill = "ROI") +
+
+  # Clean theme
+  theme_classic(base_size = 14)
 
 ```
 2a) OL Late RSC vs Complex 
 
+***
 ```{r}
 
 # 1) Filtering + Subject means
@@ -2907,17 +2377,22 @@ plot_data <- long_parsed %>%
     str_detect(raw_name, "ol_new_late_w_ol_new_late_")  
   ) %>%
   group_by(ID, ROI, Hall) %>%
+  summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop")
   # summarise(RSA = mean(RSA, na.rm = TRUE),
   #           .groups = "drop") %>%
   
   # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
+#   mutate(Hall = factor(Hall,
+#                        levels = c("Cue period",
+#                                   "1st hallway",
+#                                   "2nd hallway",
+#                                   "Goal")))
+# 
+  
+# ✅ FAIL FAST HERE
+stopifnot(nrow(plot_data) > 0)
 
-print(plot_data)
+ print(plot_data)
 
 ```
 ANOVA
@@ -2925,7 +2400,7 @@ ANOVA
 
  # ANOVA
 # summary
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
+# options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
 anova_model <- aov_ez(
   id = "ID",
   dv = "RSA",
@@ -2969,6 +2444,49 @@ niceAnovaTable <- data.frame(
 print(niceAnovaTable)
 
 
+```
+* POST-HOCS
+```{r}
+
+### ------> POSTHOC COHEN'S D IN R ARE WRONG ****************************************************
+# Estimated marginal means for ALL 8 cells (ROI × Hall)
+#emm_interaction <- emmeans(anova_model, ~ ROI * Hall)
+
+# Holm correction across all 28 comparisons
+#posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+
+# Estimated marginal means (EMMs) for ALL 8 cells (ROI × Hall)
+emm_interaction <- emmeans(anova_model, ~ ROI * Hall)
+
+
+# Pairwise comparisons (Holm across 28)
+posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+
+holm_table <- summary(posthoc_holm) |>
+  as.data.frame() |>
+  mutate(
+    estimate = round(estimate, 3),
+    SE       = round(SE, 3),
+    t        = round(t.ratio, 2),
+
+    # ✅ Robust within-subject Cohen's d (JASP-approx)
+    cohen_d  = round(abs(t.ratio) / sqrt(df + 1), 3),
+
+    sig = case_when(
+      p.value < .001 ~ "***",
+      p.value < .01  ~ "**",
+      p.value < .05  ~ "*",
+      TRUE ~ ""
+    ),
+
+    pValueFinal = case_when(
+      p.value < .001 ~ "< .001",
+      TRUE ~ paste0("= ", sub("^0\\.", ".", sprintf("%.3f", round(p.value, 3))))
+    )
+  ) |>
+  select(contrast, estimate, SE, df, t, cohen_d, pValueFinal, sig)
+
+print(holm_table, row.names = FALSE)
 ```
 DESCRIPTIVES
 ```{r}
@@ -2988,64 +2506,65 @@ print(descriptives_OL_Late_RSCvsComplex)
 ```
 PLOTTING OL Late RSC vs Complex 
 ```{r}
-# # 1) Make sure ROI is a factor following the order I want and not the by-default alphabetical one
+# 1) Make sure ROI is a factor following the order I want and not the by-default alphabetical one
 # plot_data$ROI <- factor(plot_data$ROI, levels = c("RSC", "Complex"))
-# 
-# # 2) Plot with ribbon for mean ± SE
-# ggplot(plot_data,
-#        aes(x = Hall,
-#            y = RSA,
-#            color = ROI,
-#            fill = ROI,
-#            group = ROI)) +
-#   
-#   # Ribbon for standard error
-#   stat_summary(fun.data = mean_se,
-#                geom = "ribbon",
-#                alpha = 0.15,
-#                color = NA) +
-#   
-#   # Mean line
-#   stat_summary(fun = mean,
-#                geom = "line",
-#                linewidth = 1) +
-#   
-#   # Mean points
-#   stat_summary(fun = mean,
-#                geom = "point",
-#                size = 3) +
-#   
-#   # Custom colors
-#   
-#   scale_color_manual(values = c(
-#     "RSC" = RSC_OL_Late_purple, 
-#     "Complex" = Complex_OL_Late_blue
-#     
-#    ),
-#    labels = c("RSC", "RSComplex")) +
-#   
-#   scale_fill_manual(values = c(
-#     "RSC" = RSC_OL_Late_purple,
-#     "Complex" = Complex_OL_Late_blue
-#     
-#   ),
-#   
-#    labels = c("RSC", "RSComplex")) +
-#   
-#   # Labels
-#   labs(x = "Hall",
-#        y = "Representational similarity (r)",
-#        title = "(2a) OL LATE RSC vs RSComplex",
-#        #subtitle = "(2a) OL EARLY RSC vs Complex",
-#        color = "ROI",
-#        fill = "ROI") +
-#   
-#   # Clean theme
-#   theme_classic(base_size = 14)
+
+# 2) Plot with ribbon for mean ± SE
+ggplot(plot_data,
+       aes(x = Hall,
+           y = RSA,
+           color = ROI,
+           fill = ROI,
+           group = ROI)) +
+
+  # Ribbon for standard error
+  stat_summary(fun.data = mean_se,
+               geom = "ribbon",
+               alpha = 0.15,
+               color = NA) +
+
+  # Mean line
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+
+  # Mean points
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3) +
+
+  # Custom colors
+
+  scale_color_manual(values = c(
+    "RSC" = RSC_OL_Late_purple,
+    "Complex" = Complex_OL_Late_blue
+
+   ),
+   labels = c("RSC", "RSComplex")) +
+
+  scale_fill_manual(values = c(
+    "RSC" = RSC_OL_Late_purple,
+    "Complex" = Complex_OL_Late_blue
+
+  ),
+
+   labels = c("RSC", "RSComplex")) +
+
+  # Labels
+  labs(x = "Hall",
+       y = "Representational similarity (r)",
+       title = "(2a) OL LATE RSC vs RSComplex",
+       #subtitle = "(2a) OL EARLY RSC vs Complex",
+       color = "ROI",
+       fill = "ROI") +
+
+  # Clean theme
+  theme_classic(base_size = 14)
 
 ```
 2a) NOL Early RSC vs Complex
 
+***
 ```{r}
 
 
@@ -3056,15 +2575,19 @@ plot_data <- long_parsed %>%
     str_detect(raw_name, "nol_new_early_w_nol_new_early_")  
   ) %>%
   group_by(ID, ROI, Hall) %>%
+  summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop")
   # summarise(RSA = mean(RSA, na.rm = TRUE),
   #           .groups = "drop") %>%
   
   # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
+  # mutate(Hall = factor(Hall,
+  #                      levels = c("Cue period",
+  #                                 "1st hallway",
+  #                                 "2nd hallway",
+  #                                 "Goal")))
+
+# ✅ FAIL FAST HERE
+stopifnot(nrow(plot_data) > 0)
 
 print(plot_data)
 
@@ -3074,7 +2597,7 @@ ANOVA
 
  # ANOVA
 # summary
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
+# options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
 anova_model <- aov_ez(
   id = "ID",
   dv = "RSA",
@@ -3118,6 +2641,49 @@ niceAnovaTable <- data.frame(
 print(niceAnovaTable)
 
 
+```
+* POST-HOCS
+```{r}
+
+### ------> POSTHOC COHEN'S D IN R ARE WRONG ****************************************************
+# Estimated marginal means for ALL 8 cells (ROI × Hall)
+#emm_interaction <- emmeans(anova_model, ~ ROI * Hall)
+
+# Holm correction across all 28 comparisons
+#posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+
+# Estimated marginal means (EMMs) for ALL 8 cells (ROI × Hall)
+emm_interaction <- emmeans(anova_model, ~ ROI * Hall)
+
+
+# Pairwise comparisons (Holm across 28)
+posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+
+holm_table <- summary(posthoc_holm) |>
+  as.data.frame() |>
+  mutate(
+    estimate = round(estimate, 3),
+    SE       = round(SE, 3),
+    t        = round(t.ratio, 2),
+
+    # ✅ Robust within-subject Cohen's d (JASP-approx)
+    cohen_d  = round(abs(t.ratio) / sqrt(df + 1), 3),
+
+    sig = case_when(
+      p.value < .001 ~ "***",
+      p.value < .01  ~ "**",
+      p.value < .05  ~ "*",
+      TRUE ~ ""
+    ),
+
+    pValueFinal = case_when(
+      p.value < .001 ~ "< .001",
+      TRUE ~ paste0("= ", sub("^0\\.", ".", sprintf("%.3f", round(p.value, 3))))
+    )
+  ) |>
+  select(contrast, estimate, SE, df, t, cohen_d, pValueFinal, sig)
+
+print(holm_table, row.names = FALSE)
 ```
 DESCRIPTIVES
 ```{r}
@@ -3139,62 +2705,62 @@ PLOTTING NOL Early RSC vs RSComplex
 ```{r}
 # 1) Make sure ROI is a factor following the order I want and not the by-default alphabetical one
 # plot_data$ROI <- factor(plot_data$ROI, levels = c("RSC", "Complex"))
-# 
-# # 2) Plot with ribbon for mean ± SE
-# ggplot(plot_data,
-#        aes(x = Hall,
-#            y = RSA,
-#            color = ROI,
-#            fill = ROI,
-#            group = ROI)) +
-#   
-#   # Ribbon for standard error
-#   stat_summary(fun.data = mean_se,
-#                geom = "ribbon",
-#                alpha = 0.15,
-#                color = NA) +
-#   
-#   # Mean line
-#   stat_summary(fun = mean,
-#                geom = "line",
-#                linewidth = 1) +
-#   
-#   # Mean points
-#   stat_summary(fun = mean,
-#                geom = "point",
-#                size = 3) +
-#   
-#   # Custom colors
-#   
-#   scale_color_manual(values = c(
-#     "RSC" = RSC_NOL_Early_purple,
-#     "Complex" = Complex_NOL_Early_blue
-#     
-#   ),
-#    labels = c("RSC", "RSComplex")) +
-#   
-#   scale_fill_manual(values = c(
-#     "RSC" = RSC_NOL_Early_purple,
-#     "Complex" = Complex_NOL_Early_blue
-#     
-#   ),
-#    labels = c("RSC", "RSComplex")) +
-#   
-#   # Labels
-#   labs(x = "Hall",
-#        y = "Representational similarity (r)",
-#        title = "(2a) NOL EARLY RSC vs RSComplex",
-#        #subtitle = "(2a) OL EARLY RSCvsComplex",
-#        color = "ROI",
-#        fill = "ROI") +
-#   
-#   # Clean theme
-#   theme_classic(base_size = 14)
+
+# 2) Plot with ribbon for mean ± SE
+ggplot(plot_data,
+       aes(x = Hall,
+           y = RSA,
+           color = ROI,
+           fill = ROI,
+           group = ROI)) +
+
+  # Ribbon for standard error
+  stat_summary(fun.data = mean_se,
+               geom = "ribbon",
+               alpha = 0.15,
+               color = NA) +
+
+  # Mean line
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+
+  # Mean points
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3) +
+
+  # Custom colors
+
+  scale_color_manual(values = c(
+    "RSC" = RSC_NOL_Early_purple,
+    "Complex" = Complex_NOL_Early_blue
+
+  ),
+   labels = c("RSC", "RSComplex")) +
+
+  scale_fill_manual(values = c(
+    "RSC" = RSC_NOL_Early_purple,
+    "Complex" = Complex_NOL_Early_blue
+
+  ),
+   labels = c("RSC", "RSComplex")) +
+
+  # Labels
+  labs(x = "Hall",
+       y = "Representational similarity (r)",
+       title = "(2a) NOL EARLY RSC vs RSComplex",
+       #subtitle = "(2a) OL EARLY RSCvsComplex",
+       color = "ROI",
+       fill = "ROI") +
+
+  # Clean theme
+  theme_classic(base_size = 14)
 
 ```
 2a) NOL LATE RSC vs RSComplex 
 
-
+***
 ```{r}
 # (2a) NOL LATE RSC vs Complex 
 
@@ -3205,15 +2771,19 @@ plot_data <- long_parsed %>%
     str_detect(raw_name, "nol_new_late_w_nol_new_late_")  
   ) %>%
   group_by(ID, ROI, Hall) %>%
+  summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop")
   # summarise(RSA = mean(RSA, na.rm = TRUE),
   #           .groups = "drop") %>%
   
   # Ensure Hall is a factor in the correct order
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
+  # mutate(Hall = factor(Hall,
+  #                      levels = c("Cue period",
+  #                                 "1st hallway",
+  #                                 "2nd hallway",
+  #                                 "Goal")))
+
+# ✅ FAIL FAST HERE
+stopifnot(nrow(plot_data) > 0)
 
 print(plot_data)
 
@@ -3223,7 +2793,7 @@ ANOVA
 
  # ANOVA
 # summary
-options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
+# options(contrasts = c("contr.sum", "contr.poly")) #same analysis as in JASP
 anova_model <- aov_ez(
   id = "ID",
   dv = "RSA",
@@ -3268,6 +2838,49 @@ print(niceAnovaTable)
 
 
 ```
+* POST-HOCS
+```{r}
+
+### ------> POSTHOC COHEN'S D IN R ARE WRONG ****************************************************
+# Estimated marginal means for ALL 8 cells (ROI × Hall)
+#emm_interaction <- emmeans(anova_model, ~ ROI * Hall)
+
+# Holm correction across all 28 comparisons
+#posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+
+# Estimated marginal means (EMMs) for ALL 8 cells (ROI × Hall)
+emm_interaction <- emmeans(anova_model, ~ ROI * Hall)
+
+
+# Pairwise comparisons (Holm across 28)
+posthoc_holm <- pairs(emm_interaction, adjust = "holm")
+
+holm_table <- summary(posthoc_holm) |>
+  as.data.frame() |>
+  mutate(
+    estimate = round(estimate, 3),
+    SE       = round(SE, 3),
+    t        = round(t.ratio, 2),
+
+    # ✅ Robust within-subject Cohen's d (JASP-approx)
+    cohen_d  = round(abs(t.ratio) / sqrt(df + 1), 3),
+
+    sig = case_when(
+      p.value < .001 ~ "***",
+      p.value < .01  ~ "**",
+      p.value < .05  ~ "*",
+      TRUE ~ ""
+    ),
+
+    pValueFinal = case_when(
+      p.value < .001 ~ "< .001",
+      TRUE ~ paste0("= ", sub("^0\\.", ".", sprintf("%.3f", round(p.value, 3))))
+    )
+  ) |>
+  select(contrast, estimate, SE, df, t, cohen_d, pValueFinal, sig)
+
+print(holm_table, row.names = FALSE)
+```
 DESCRIPTIVES
 ```{r}
 ###) Descriptives
@@ -3284,121 +2897,144 @@ descriptives_NOL_Late_RSCvsComplex <- plot_data %>%
 
 print(descriptives_NOL_Late_RSCvsComplex)
 ```
-PLOTTING NOL LATE RSC vs RSCComplex
+PLOTTING NOL LATE RSC vs RSComplex
 ```{r}
 # 1) Make sure ROI is a factor following the order I want and not the by-default alphabetical one
 #plot_data$ROI <- factor(plot_data$ROI, levels = c("RSC", "Complex"))
 # 2) Plot with ribbon for mean ± SE
 
-# ggplot(plot_data,
-#        aes(x = Hall,
-#            y = RSA,
-#            color = ROI,
-#            fill = ROI,
-#            group = ROI)) +
-#   
-#   # Ribbon for standard error
-#   stat_summary(fun.data = mean_se,
-#                geom = "ribbon",
-#                alpha = 0.15,
-#                color = NA) +
-#   
-#   # Mean line
-#   stat_summary(fun = mean,
-#                geom = "line",
-#                linewidth = 1) +
-#   
-#   # Mean points
-#   stat_summary(fun = mean,
-#                geom = "point",
-#                size = 3) +
-#   
-#    # Custom colors with legend labels
-#   scale_color_manual(values = c(
-#     "RSC" = RSC_NOL_Late_purple,
-#     "Complex" = Complex_NOL_Late_blue
-#   ),
-#   labels = c("RSC", "RSComplex")) + # Renaming "Complex" with "RSComplex"
-#   
-#   scale_fill_manual(values = c(
-#     "RSC" = RSC_NOL_Late_purple,
-#     "Complex" = Complex_NOL_Late_blue
-#   ),
-#   labels = c("RSC", "RSComplex")) + # Renaming "Complex" with "RSComplex"
-#   
-#   # Labels
-#   labs(x = "Hall",
-#        y = "Representational similarity (r)",
-#        title = "(2a) NOL LATE RSC vs RSComplex",
-#        #subtitle = "(2a) OL EARLY RSCvsComplex",
-#        color = "ROI",
-#        fill = "ROI") +
-#   
-#   # Clean theme
-#   theme_classic(base_size = 14)
+ggplot(plot_data,
+       aes(x = Hall,
+           y = RSA,
+           color = ROI,
+           fill = ROI,
+           group = ROI)) +
+
+  # Ribbon for standard error
+  stat_summary(fun.data = mean_se,
+               geom = "ribbon",
+               alpha = 0.15,
+               color = NA) +
+
+  # Mean line
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+
+  # Mean points
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3) +
+
+   # Custom colors with legend labels
+  scale_color_manual(values = c(
+    "RSC" = RSC_NOL_Late_purple,
+    "Complex" = Complex_NOL_Late_blue
+  ),
+  labels = c("RSC", "RSComplex")) + # Renaming "Complex" with "RSComplex"
+
+  scale_fill_manual(values = c(
+    "RSC" = RSC_NOL_Late_purple,
+    "Complex" = Complex_NOL_Late_blue
+  ),
+  labels = c("RSC", "RSComplex")) + # Renaming "Complex" with "RSComplex"
+
+  # Labels
+  labs(x = "Hall",
+       y = "Representational similarity (r)",
+       title = "(2a) NOL LATE RSC vs RSComplex",
+       #subtitle = "(2a) OL EARLY RSCvsComplex",
+       color = "ROI",
+       fill = "ROI") +
+
+  # Clean theme
+  theme_classic(base_size = 14)
 ```
 ****************************
 2) NATURE OF REPRESENTATIONS
 ****************************
+
 REPULSION, SEPARATION OR COMPLETION REPRESENTATIONS?
 ******************************************************
 ## (2b) 2b.1) Hippocampus (EARLY+LATE)
+
 ```{r}
 
-# 1) Set hall order
-long_parsed <- long_parsed %>%
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
-# 2) Filter data
-
+# 1) Filter data
 ## Early
 early_data <- long_parsed %>%
   filter(
     Overlappicity == "OL",
     learningStage == "Early",
-    ROI %in% c("Hippocampus"),
-    grepl("ol_new_early_w_ol_new_early|ol_new_early_w_ol_old_early", raw_name)
+    ROI == "Hippocampus",
+    str_detect(
+      raw_name,
+      "ol_new_early_w_ol_new_early|ol_new_early_w_ol_old_early"
+    )
   )
+
+# Fail fast (defensive)
+stopifnot(nrow(early_data) > 0)
 
 ## Late
 late_data <- long_parsed %>%
   filter(
     Overlappicity == "OL",
     learningStage == "Late",
-    ROI %in% c("Hippocampus"),
-    grepl("ol_new_late_w_ol_new_late|ol_new_late_w_ol_old_late", raw_name)
+    ROI == "Hippocampus",
+    str_detect(
+      raw_name,
+      "ol_new_late_w_ol_new_late|ol_new_late_w_ol_old_late"
+    )
   )
 
+# Fail fast (defensive)
+stopifnot(nrow(late_data) > 0)
 
+# --------------------------------
 # 2) Reshape to wide format
+# --------------------------------
+
 ## Early
 early_wide <- early_data %>%
-  mutate(contrast = case_when(
-    grepl("ol_new_early_w_ol_new_early", raw_name) ~ "new_new",
-    grepl("ol_new_early_w_ol_old_early", raw_name) ~ "new_old"
-  )) %>%
-  select(ID, Hall, contrast, RSA) %>%
-  pivot_wider(names_from = contrast,
-              values_from = RSA)
+  mutate(
+    contrast = case_when(
+      str_detect(raw_name, "ol_new_early_w_ol_new_early") ~ "new_new",
+      str_detect(raw_name, "ol_new_early_w_ol_old_early") ~ "new_old"
+    )
+  ) %>%
+ group_by(ID, Hall, contrast) %>%
+summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop") %>%
+pivot_wider(
+  names_from  = contrast,
+  values_from = RSA
+)
+
+# Optional sanity check
+stopifnot(all(c("new_new", "new_old") %in% colnames(early_wide)))
 
 ## Late
 late_wide <- late_data %>%
-  mutate(contrast = case_when(
-    grepl("ol_new_late_w_ol_new_late", raw_name) ~ "new_new",
-    grepl("ol_new_late_w_ol_old_late", raw_name) ~ "new_old"
-  )) %>%
-  select(ID, Hall, contrast, RSA) %>%
-  pivot_wider(names_from = contrast,
-              values_from = RSA)
+  mutate(
+    contrast = case_when(
+      str_detect(raw_name, "ol_new_late_w_ol_new_late") ~ "new_new",
+      str_detect(raw_name, "ol_new_late_w_ol_old_late") ~ "new_old"
+    )
+  ) %>%
+ 
+group_by(ID, Hall, contrast) %>%
+summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop") %>%
+pivot_wider(
+  names_from  = contrast,
+  values_from = RSA
+)
 
+# Optional sanity check
+stopifnot(all(c("new_new", "new_old") %in% colnames(late_wide)))
 
 ```
 paired t-tests (for both Early & Late), Cohen's d, CI's 95%...
 ```{r}
-library(dplyr)
 
 run_full_paired_tests <- function(data, LearningStage_label) {
 
@@ -3426,13 +3062,12 @@ run_full_paired_tests <- function(data, LearningStage_label) {
       ci_high = sapply(t_test, function(x) x$conf.int[2]),
       
       # Cohen's dz for paired samples
-      cohens_d = mean_diff / sd_diff,
+      cohens_d = ifelse(sd_diff == 0, NA, mean_diff / sd_diff),
+      #cohens_d = mean_diff / sd_diff,
       
-       # Standard error of the difference (SE)
-      se_diff = sd_diff / sqrt(n), 
-      
+     
       # Flag significant p values
-      se_diff = sd_diff / sqrt(n),
+      se_diff = sd_diff / sqrt(n),  # Standard error of the difference (SE)
       sig_value = case_when(
         p_value < 0.001 ~ "***",
         p_value < 0.01  ~ "**",
@@ -3465,60 +3100,83 @@ final_results_HC <- bind_rows(early_results, late_results)
 ## 2b.2) RSC (EARLY+LATE)
 ```{r}
 
-# 1) Set hall order
-long_parsed <- long_parsed %>%
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
-# 2) Filter data
-
+# 1) Filter data
 ## Early
 early_data <- long_parsed %>%
   filter(
     Overlappicity == "OL",
     learningStage == "Early",
-    ROI %in% c("RSC"),
-    grepl("ol_new_early_w_ol_new_early|ol_new_early_w_ol_old_early", raw_name)
+    ROI == "RSC",
+    str_detect(
+      raw_name,
+      "ol_new_early_w_ol_new_early|ol_new_early_w_ol_old_early"
+    )
   )
+
+# Fail fast (defensive)
+stopifnot(nrow(early_data) > 0)
 
 ## Late
 late_data <- long_parsed %>%
   filter(
     Overlappicity == "OL",
     learningStage == "Late",
-    ROI %in% c("RSC"),
-    grepl("ol_new_late_w_ol_new_late|ol_new_late_w_ol_old_late", raw_name)
+    ROI == "RSC",
+    str_detect(
+      raw_name,
+      "ol_new_late_w_ol_new_late|ol_new_late_w_ol_old_late"
+    )
   )
 
+# Fail fast (defensive)
+stopifnot(nrow(late_data) > 0)
 
+# --------------------------------
 # 2) Reshape to wide format
+# --------------------------------
+
 ## Early
 early_wide <- early_data %>%
-  mutate(contrast = case_when(
-    grepl("ol_new_early_w_ol_new_early", raw_name) ~ "new_new",
-    grepl("ol_new_early_w_ol_old_early", raw_name) ~ "new_old"
-  )) %>%
-  select(ID, Hall, contrast, RSA) %>%
-  pivot_wider(names_from = contrast,
-              values_from = RSA)
+  mutate(
+    contrast = case_when(
+      str_detect(raw_name, "ol_new_early_w_ol_new_early") ~ "new_new",
+      str_detect(raw_name, "ol_new_early_w_ol_old_early") ~ "new_old"
+    )
+  ) %>%
+  
+ group_by(ID, Hall, contrast) %>%
+summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop") %>%
+pivot_wider(
+  names_from  = contrast,
+  values_from = RSA
+)
+
+# Optional sanity check
+stopifnot(all(c("new_new", "new_old") %in% colnames(early_wide)))
 
 ## Late
 late_wide <- late_data %>%
-  mutate(contrast = case_when(
-    grepl("ol_new_late_w_ol_new_late", raw_name) ~ "new_new",
-    grepl("ol_new_late_w_ol_old_late", raw_name) ~ "new_old"
-  )) %>%
-  select(ID, Hall, contrast, RSA) %>%
-  pivot_wider(names_from = contrast,
-              values_from = RSA)
+  mutate(
+    contrast = case_when(
+      str_detect(raw_name, "ol_new_late_w_ol_new_late") ~ "new_new",
+      str_detect(raw_name, "ol_new_late_w_ol_old_late") ~ "new_old"
+    )
+  ) %>%
+  
+group_by(ID, Hall, contrast) %>%
+summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop") %>%
+pivot_wider(
+  names_from  = contrast,
+  values_from = RSA
+)
 
+# Optional sanity check
+stopifnot(all(c("new_new", "new_old") %in% colnames(late_wide)))
 
 ```
 paired t-tests (for both Early & Late), Cohen's d, CI's 95%...
 ```{r}
-library(dplyr)
+# library(dplyr)
 
 run_full_paired_tests <- function(data, LearningStage_label) {
 
@@ -3546,13 +3204,11 @@ run_full_paired_tests <- function(data, LearningStage_label) {
       ci_high = sapply(t_test, function(x) x$conf.int[2]),
       
       # Cohen's dz for paired samples
-      cohens_d = mean_diff / sd_diff,
+      cohens_d = ifelse(sd_diff == 0, NA, mean_diff / sd_diff),
       
-       # Standard error of the difference (SE)
-      se_diff = sd_diff / sqrt(n), 
       
        # Flag significant p values
-      se_diff = sd_diff / sqrt(n),
+      se_diff = sd_diff / sqrt(n),  # Standard error of the difference (SE)
       sig_value = case_when(
         p_value < 0.001 ~ "***",
         p_value < 0.01  ~ "**",
@@ -3585,60 +3241,83 @@ final_results_RSC <- bind_rows(early_results, late_results)
 
 ```{r}
 
-# 1) Set hall order
-long_parsed <- long_parsed %>%
-  mutate(Hall = factor(Hall,
-                       levels = c("Cue period",
-                                  "1st hallway",
-                                  "2nd hallway",
-                                  "Goal")))
-# 2) Filter data
-
+# 1) Filter data
 ## Early
 early_data <- long_parsed %>%
   filter(
     Overlappicity == "OL",
     learningStage == "Early",
-    ROI %in% c("Complex"),
-    grepl("ol_new_early_w_ol_new_early|ol_new_early_w_ol_old_early", raw_name)
+    ROI == "Complex",  # keep INTERNAL name
+    str_detect(
+      raw_name,
+      "ol_new_early_w_ol_new_early|ol_new_early_w_ol_old_early"
+    )
   )
+
+# ✅ Fail fast
+stopifnot(nrow(early_data) > 0)
 
 ## Late
 late_data <- long_parsed %>%
   filter(
     Overlappicity == "OL",
     learningStage == "Late",
-    ROI %in% c("Complex"),
-    grepl("ol_new_late_w_ol_new_late|ol_new_late_w_ol_old_late", raw_name)
+    ROI == "Complex",  # keep INTERNAL name
+    str_detect(
+      raw_name,
+      "ol_new_late_w_ol_new_late|ol_new_late_w_ol_old_late"
+    )
   )
 
+# ✅ Fail fast
+stopifnot(nrow(late_data) > 0)
 
+# --------------------------------
 # 2) Reshape to wide format
+# --------------------------------
+
 ## Early
 early_wide <- early_data %>%
-  mutate(contrast = case_when(
-    grepl("ol_new_early_w_ol_new_early", raw_name) ~ "new_new",
-    grepl("ol_new_early_w_ol_old_early", raw_name) ~ "new_old"
-  )) %>%
-  select(ID, Hall, contrast, RSA) %>%
-  pivot_wider(names_from = contrast,
-              values_from = RSA)
+  mutate(
+    contrast = case_when(
+      str_detect(raw_name, "ol_new_early_w_ol_new_early") ~ "new_new",
+      str_detect(raw_name, "ol_new_early_w_ol_old_early") ~ "new_old"
+    )
+  ) %>%
+  
+  group_by(ID, Hall, contrast) %>%
+summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop") %>%
+pivot_wider(
+  names_from  = contrast,
+  values_from = RSA
+)
+
+# ✅ Sanity check
+stopifnot(all(c("new_new", "new_old") %in% colnames(early_wide)))
 
 ## Late
 late_wide <- late_data %>%
-  mutate(contrast = case_when(
-    grepl("ol_new_late_w_ol_new_late", raw_name) ~ "new_new",
-    grepl("ol_new_late_w_ol_old_late", raw_name) ~ "new_old"
-  )) %>%
-  select(ID, Hall, contrast, RSA) %>%
-  pivot_wider(names_from = contrast,
-              values_from = RSA)
+  mutate(
+    contrast = case_when(
+      str_detect(raw_name, "ol_new_late_w_ol_new_late") ~ "new_new",
+      str_detect(raw_name, "ol_new_late_w_ol_old_late") ~ "new_old"
+    )
+  ) %>%
+  
+  group_by(ID, Hall, contrast) %>%
+summarise(RSA = mean(RSA, na.rm = TRUE), .groups = "drop") %>%
+pivot_wider(
+  names_from  = contrast,
+  values_from = RSA
+)
 
+# ✅ Sanity check
+stopifnot(all(c("new_new", "new_old") %in% colnames(late_wide)))
 
 ```
 paired t-tests (for both Early & Late), Cohen's d, CI's 95%...
 ```{r}
-library(dplyr)
+# library(dplyr)
 
 run_full_paired_tests <- function(data, LearningStage_label) {
 
@@ -3666,13 +3345,11 @@ run_full_paired_tests <- function(data, LearningStage_label) {
       ci_high = sapply(t_test, function(x) x$conf.int[2]),
       
       # Cohen's dz for paired samples
-      cohens_d = mean_diff / sd_diff,
+      cohens_d = ifelse(sd_diff == 0, NA, mean_diff / sd_diff),
       
-       # Standard error of the difference (SE)
-      se_diff = sd_diff / sqrt(n), 
       
        # Flag significant p values
-      se_diff = sd_diff / sqrt(n),
+      se_diff = sd_diff / sqrt(n),  # Standard error of the difference (SE)
       sig_value = case_when(
         p_value < 0.001 ~ "***",
         p_value < 0.01  ~ "**",
@@ -3700,12 +3377,12 @@ Data table
 early_results <- run_full_paired_tests(early_wide, "Early")
 late_results  <- run_full_paired_tests(late_wide,  "Late")
 
-final_results_RSComplex <- bind_rows(early_results, late_results)`{r}
+final_results_RSComplex <- bind_rows(early_results, late_results)
 ```
 # PLOTTING all 3 ROIs together EARLY
 a) Data frame rearranged
 ```{r}
-# add an ROI column to each "final_results"table
+# add a ROI column to each "final_results"table
 hipp_results    <- final_results_HC    %>% mutate(ROI = "Hippocampus")
 rsc_results     <- final_results_RSC     %>% mutate(ROI = "RSC")
 complex_results <- final_results_RSComplex %>% mutate(ROI = "Complex")
@@ -3722,7 +3399,7 @@ b) Prepare and define X-Axis order
 ```{r}
 # 1) Filter Early and construct a custom x-axis factor
 
-library(dplyr)
+# library(dplyr)
 
 early_plot <- final_results_allROIs %>%
   filter(leStage == "Early") %>%
@@ -3749,201 +3426,264 @@ early_plot <- early_plot %>%
 ```
 Build the point Plot
 
+****************************************************
+Dot plot (EARLY) - VERSION II (02/05/2026) *****needs to fix the asterisks
+****************************************************
+
 ```{r}
 
-roi_colors_early <- c(
-  "HC" = "#E69F00",        # muted orange
-  "RSC" = "#7B3294",       # deep purple
-  "RSComplex" = "#0072B2"  # muted blue
+# # --------------------------------
+# # Collapse across ROI within Hall (EARLY)
+# # --------------------------------
+
+early_plot_collapsed <- final_results_allROIs %>%
+  filter(leStage == "Early") %>%
+  mutate(
+  ROI_label = dplyr::recode(ROI, "Complex" = "RSComplex")
 )
 
+
+roi_colors_early <- c(
+  "Hippocampus" = "#E69F00", # muted orange
+  "RSC"         = "#7B3294",  # deep purple
+  "RSComplex"   = "#0072B2" # muted blue
+)
+
+## ______________> This is for the former dot plot version, not sure if should keep it yet
 
 # Define custom y-axis breaks manually, including 0
 y_breaks <- c(-0.01, 0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08)
 #y_breaks <- seq(-0.0, 0.8, by = 0.025)  # from -0.05 to 0.1 in steps of 0.025
+# Add stars to display significant values
 
-ggplot(early_plot, aes(x = x_label, y = mean_diff, color = ROI)) +
-  
-  # Black error bars
-  geom_errorbar(aes(ymin = mean_diff - se_diff,
-                    ymax = mean_diff + se_diff),
-                width = 0.15,
-                linewidth = 0.6,
-                color = "black") +
-  
-  # Colored points
-  geom_point(size = 3.5) +
-  
-  # Significance stars
-  geom_text(aes(label = sig_value,
-                y = mean_diff + se_diff + 0.002), # slightly above error bar (0.01)
-            color = "black",
-            size = 7,
-            fontface = "bold") +
-  
+dodge_width <- 0.4
+
+p2 <- ggplot(
+  early_plot_collapsed,
+  aes(
+    x     = Hall,
+    y     = mean_diff,
+    color = ROI_label,
+    group = ROI_label
+  )
+) +
+
+  # Error bars
+  geom_errorbar(
+    aes(
+      ymin = mean_diff - se_diff,
+      ymax = mean_diff + se_diff
+    ),
+    width = 0.15,
+    linewidth = 0.6,
+    color = "black",
+    position = position_dodge(width = dodge_width)
+  ) +
+
+  # Points
+  geom_point(
+    size = 3.5,
+    position = position_dodge(width = dodge_width)
+  ) +
+
+  # ✅ Significance stars (key addition)
+  geom_text(
+    aes(
+      label = sig_value,
+      y = mean_diff + se_diff + 0.003
+    ),
+    position = position_dodge(width = dodge_width),
+    color = "black",
+    size = 6,
+    fontface = "bold"
+  ) +
+
   # Zero reference line
-   geom_hline(yintercept = 0,
-             linetype = "dashed",
-             linewidth = 0.6,
-             color = "grey40") +
-  
-   # Custom y-axis with exact limits and breaks
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed",
+    linewidth = 0.6,
+    color = "grey40"
+  ) +
+
+  # Y axis
   scale_y_continuous(
     limits = c(-0.01, 0.08),
     breaks = y_breaks,
     labels = scales::number_format(accuracy = 0.01),
     expand = c(0, 0)
   ) +
-  
-  
-  scale_color_manual(values = roi_colors_early) +
-  
-  labs(
-    x = NULL,
-    y = "(OL New+New) No Pairs - (OL New+Old) Pairs"
+
+  # X axis with 4 ticks
+  scale_x_discrete(
+    limits = c("Cue period", "1st hallway", "2nd hallway", "Goal")
   ) +
-  
-   # Panel lettering "A"
-   annotate("text", x = 0.5, y = 0.078,  # slightly above top limit
-           label = "A", fontface = "bold", size = 6, hjust = 0) +
-  
-  #Theme
+
+  # Colors
+  scale_color_manual(
+    values = roi_colors_early,
+    name   = "ROI"
+  ) +
+
+  labs(
+    x = "Hall",
+    y = "(OL New+New) − (OL New+Old)"
+  ) +
+
   theme_classic(base_size = 16) +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1, color = "black"),
-    axis.text.y = element_text(color = "black"),
+    axis.text.x  = element_text(color = "black"),
+    axis.text.y  = element_text(color = "black"),
     axis.title.y = element_text(face = "bold", size = 12),
-    axis.line = element_line(linewidth = 0.8),
-    axis.ticks = element_line(linewidth = 0.8),
-    legend.position = "none"
+    axis.line    = element_line(linewidth = 0.8),
+    axis.ticks   = element_line(linewidth = 0.8)
   )
 
-# EXPORT AT JOURNAL RESOLUTION
-ggsave("Early_Repulsion_ttests.tiff",
-       width = 7,
-       height = 6,
-       dpi = 600,
-       compression = "lzw")
+# ✅ Required in R Markdown
+print(p2)
 
-```
-####################
-# PLOTTING all 3 ROIs together LATE
-
-a) Prepare and define X-Axis order
-
-```{r}
-# 1) Filter Late and construct a custom x-axis factor
-
-library(dplyr)
-
-late_plot <- final_results_allROIs %>%
-  filter(leStage == "Late") %>%
-  mutate(
-    ROI = dplyr::recode(ROI,
-                        "Hippocampus" = "HC",
-                        "Complex"     = "RSComplex"),
-    x_label = paste(Hall, ROI, sep = "_")
-  )
-
-# Factor levels
-late_plot <- late_plot %>%
-  mutate(
-    x_label = factor(
-      x_label,
-      levels = c(
-        "Cue period_HC", "Cue period_RSC", "Cue period_RSComplex",
-        "1st hallway_HC", "1st hallway_RSC", "1st hallway_RSComplex",
-        "2nd hallway_HC", "2nd hallway_RSC", "2nd hallway_RSComplex",
-        "Goal_HC", "Goal_RSC", "Goal_RSComplex"
-      )
-    )
-  )
-```
-Build the point Plot
-
-```{r}
-
-# Custom colors for Late plot
- 
-roi_colors_late <- c(
-  "HC"        = "#FF7F00",  # bright orange
-  "RSC"       = "#8B00FF",  # ultraviolet
-  "RSComplex" = "#007FFF"   # bright blue
+ggsave(
+  "Early_Repulsion_ttests_EH_collapsedHall_withStars.tiff",
+  plot = p2,
+  width = 7,
+  height = 6,
+  dpi = 600,
+  compression = "lzw"
 )
 
 
-#y_breaks <- seq(-0.05, 0.08, by = 0.025)  # from -0.05 to 0.1 in steps of 0.025
-
-# Define custom y-axis breaks manually, including 0
-y_breaks <- c(-0.01, 0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08)
-
-ggplot(late_plot, aes(x = x_label, y = mean_diff, color = ROI)) +
-  
-  # Black error bars
-  geom_errorbar(aes(ymin = mean_diff - se_diff,
-                    ymax = mean_diff + se_diff),
-                width = 0.15,
-                linewidth = 0.6,
-                color = "black") +
-  
-  # Colored points
-  geom_point(size = 3.5) +
-  
-  # Significance stars
-  geom_text(aes(label = sig_value,
-                y = mean_diff + se_diff + 0.002), # slightly above error bar (0.01)
-            color = "black",
-            size = 7,
-            fontface = "bold") +
-  
-  # Zero reference line
-   geom_hline(yintercept = 0,
-             linetype = "dashed",
-             linewidth = 0.6,
-             color = "grey40") +
-  
-   # Custom y-axis
-  scale_y_continuous(
-    limits = c(-0.01, 0.08), # explicitly set min/max
-    breaks = y_breaks,
-    labels = scales::number_format(accuracy = 0.01),
-    expand = expansion(mult = c(0, 0))  # remove extra padding
-  ) +
-  
-  # Custom ROI colors
-  scale_color_manual(values = roi_colors_late) +
-  
-  #Labels
-  labs(
-    x = NULL,
-    y = "(OL New+New) No Pairs - (OL New+Old) Pairs"
-  ) +
-  
-  # Panel lettering
-  
-   # Panel lettering "B"
-   annotate("text", x = 0.5, y = 0.078,  
-           label = "B", fontface = "bold", size = 6, hjust = 0) +
-  
-  #Theme
-  theme_classic(base_size = 16) +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1, color = "black"),
-    axis.text.y = element_text(color = "black"),
-    axis.title.y = element_text(face = "bold", size = 12),
-    axis.line = element_line(linewidth = 0.8),
-    axis.ticks = element_line(linewidth = 0.8),
-    legend.position = "none"
-  )
-
-# EXPORT AT JOURNAL RESOLUTION
-ggsave("Late_Repulsion_ttests.tiff",
-       width = 7,
-       height = 6,
-       dpi = 600,
-       compression = "lzw")
 
 ```
+
+****************************************************
+Dot plot (LATE) VERSION II: collapsed halls (02/05/2026) *****need to fix the asterisks
+****************************************************
+```{r}
+# --------------------------------
+# Collapse across ROI within Hall (LATE)
+# --------------------------------
+
+late_plot_collapsed <- final_results_allROIs %>%
+  filter(leStage == "Late") %>%
+  mutate(
+    ROI_label = dplyr::recode(ROI, "Complex" = "RSComplex")
+  )
+
+roi_colors_late <- c(
+  "Hippocampus" = "#FF7F00",  # bright orange
+  "RSC"         = "#8B00FF",  # ultraviolet
+  "RSComplex"   = "#007FFF"   # bright blue
+)
+
+dodge_width <- 0.4
+
+p_late <- ggplot(
+  late_plot_collapsed,
+  aes(
+    x     = Hall,
+    y     = mean_diff,
+    color = ROI_label,
+    group = ROI_label
+  )
+) +
+
+  # Error bars
+  geom_errorbar(
+    aes(
+      ymin = mean_diff - se_diff,
+      ymax = mean_diff + se_diff
+    ),
+    width = 0.15,
+    linewidth = 0.6,
+    color = "black",
+    position = position_dodge(width = dodge_width)
+  ) +
+
+  # Points
+  geom_point(
+    size = 3.5,
+    position = position_dodge(width = dodge_width)
+  ) +
+
+  # Significance stars (same logic as EARLY)
+  geom_text(
+    aes(
+      label = sig_value,
+      y     = mean_diff + se_diff + 0.003
+    ),
+    position = position_dodge(width = dodge_width),
+    color = "black",
+    size = 6,
+    fontface = "bold"
+  ) +
+
+  # Zero reference line
+  geom_hline(
+    yintercept = 0,
+    linetype   = "dashed",
+    linewidth  = 0.6,
+    color      = "grey40"
+  ) +
+
+  # Y axis
+  scale_y_continuous(
+    limits = c(-0.01, 0.08),
+    breaks = y_breaks,
+    labels = scales::number_format(accuracy = 0.01),
+    expand = c(0, 0)
+  ) +
+
+  # ✅ X axis: 4 ticks only (same as EARLY)
+  scale_x_discrete(
+    limits = c("Cue period", "1st hallway", "2nd hallway", "Goal")
+  ) +
+
+  # Colors
+  scale_color_manual(
+    values = roi_colors_late,
+    name   = "ROI"
+  ) +
+
+  labs(
+    x = "Hall",
+    y = "(OL New+New) − (OL New+Old)"
+  ) +
+
+  # Panel lettering "B"
+  annotate(
+    "text",
+    x = 0.5,
+    y = 0.078,
+    label = "B",
+    fontface = "bold",
+    size = 6,
+    hjust = 0
+  ) +
+
+  theme_classic(base_size = 16) +
+  theme(
+    axis.text.x  = element_text(color = "black"),
+    axis.text.y  = element_text(color = "black"),
+    axis.title.y = element_text(face = "bold", size = 12),
+    axis.line    = element_line(linewidth = 0.8),
+    axis.ticks   = element_line(linewidth = 0.8),
+    #legend.position = "none"
+  )
+
+# ✅ Required in R Markdown
+print(p_late)
+
+# Save
+ggsave(
+  "Late_Repulsion_ttests_EH_collapsedHall_withStars.tiff",
+  plot = p_late,
+  width = 7,
+  height = 6,
+  dpi = 600,
+  compression = "lzw"
+)
+```
+
 ***************
 # 3) CORRELATIONS
 ***************
@@ -3954,10 +3694,10 @@ ggsave("Late_Repulsion_ttests.tiff",
  HC + RSC OL EARLY
 ```{r}
 
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(stringr)
+# library(dplyr)
+# library(tidyr)
+# library(ggplot2)
+# library(stringr)
 
 # --------------------------------
 # 1) Filter + clean strings
@@ -4101,9 +3841,6 @@ heatmap_df <- as.data.frame(as.table(r_mat)) %>%
 
 # Freeze master copy
 heatmap_master <- heatmap_df
-# Freeze a clean copy
-heatmap_master <- heatmap_df
-
 
 ```
 ## MASKING TRIANGLES
@@ -4395,9 +4132,6 @@ heatmap_df <- as.data.frame(as.table(r_mat)) %>%
 
 # Freeze master copy
 heatmap_master <- heatmap_df
-# Freeze a clean copy
-heatmap_master <- heatmap_df
-
 
 ```
 ## MASKING TRIANGLES
@@ -4462,9 +4196,9 @@ heatmap_plot <- heatmap_plot %>%
 ```{r}
 
 # --- Palette prep (tone down viridis) ---
-library(viridisLite)
-library(colorspace)  # <-- use this for desaturate()
-library(scales)      # for alpha() and squish
+# library(viridisLite)
+# library(colorspace)  # <-- use this for desaturate()
+# library(scales)      # for alpha() and squish
 
 cols      <- viridisLite::viridis(256, begin = 0.2, end = 0.95)
 soft_cols <- scales::alpha(colorspace::desaturate(cols, amount = 0.1), 0.85) # amount in desaturate() → higher = more muted (e.g., 0.5, 0.7) / alpha alpha(..., 0.85) → lower = lighter (e.g., 0.8).
@@ -4689,9 +4423,6 @@ heatmap_df <- as.data.frame(as.table(r_mat)) %>%
 
 # Freeze master copy
 heatmap_master <- heatmap_df
-# Freeze a clean copy
-heatmap_master <- heatmap_df
-
 
 ```
 ## MASKING TRIANGLES
@@ -4756,9 +4487,9 @@ heatmap_plot <- heatmap_plot %>%
 ```{r}
 
 # --- Palette prep (tone down viridis) ---
-library(viridisLite)
-library(colorspace)  # <-- use this for desaturate()
-library(scales)      # for alpha() and squish
+# library(viridisLite)
+# library(colorspace)  # <-- use this for desaturate()
+# library(scales)      # for alpha() and squish
 
 cols      <- viridisLite::viridis(256, begin = 0.2, end = 0.95)
 soft_cols <- scales::alpha(colorspace::desaturate(cols, amount = 0.1), 0.85) # amount in desaturate() → higher = more muted (e.g., 0.5, 0.7) / alpha alpha(..., 0.85) → lower = lighter (e.g., 0.8).
@@ -4992,9 +4723,6 @@ heatmap_df <- as.data.frame(as.table(r_mat)) %>%
 
 # Freeze master copy
 heatmap_master <- heatmap_df
-# Freeze a clean copy
-heatmap_master <- heatmap_df
-
 
 ```
 ## MASKING TRIANGLES
@@ -5059,9 +4787,9 @@ heatmap_plot <- heatmap_plot %>%
 ```{r}
 
 # --- Palette prep (tone down viridis) ---
-library(viridisLite)
-library(colorspace)  # <-- use this for desaturate()
-library(scales)      # for alpha() and squish
+# library(viridisLite)
+# library(colorspace)  # <-- use this for desaturate()
+# library(scales)      # for alpha() and squish
 
 cols      <- viridisLite::viridis(256, begin = 0.2, end = 0.95)
 soft_cols <- scales::alpha(colorspace::desaturate(cols, amount = 0.1), 0.85) # amount in desaturate() → higher = more muted (e.g., 0.5, 0.7) / alpha alpha(..., 0.85) → lower = lighter (e.g., 0.8).
@@ -5295,9 +5023,6 @@ heatmap_df <- as.data.frame(as.table(r_mat)) %>%
 
 # Freeze master copy
 heatmap_master <- heatmap_df
-# Freeze a clean copy
-heatmap_master <- heatmap_df
-
 
 ```
 ## MASKING TRIANGLES
@@ -5362,9 +5087,9 @@ heatmap_plot <- heatmap_plot %>%
 ```{r}
 
 # --- Palette prep (tone down viridis) ---
-library(viridisLite)
-library(colorspace)  # <-- use this for desaturate()
-library(scales)      # for alpha() and squish
+# library(viridisLite)
+# library(colorspace)  # <-- use this for desaturate()
+# library(scales)      # for alpha() and squish
 
 cols      <- viridisLite::viridis(256, begin = 0.2, end = 0.95)
 soft_cols <- scales::alpha(colorspace::desaturate(cols, amount = 0.1), 0.85) # amount in desaturate() → higher = more muted (e.g., 0.5, 0.7) / alpha alpha(..., 0.85) → lower = lighter (e.g., 0.8).
@@ -5598,9 +5323,6 @@ heatmap_df <- as.data.frame(as.table(r_mat)) %>%
 
 # Freeze master copy
 heatmap_master <- heatmap_df
-# Freeze a clean copy
-heatmap_master <- heatmap_df
-
 
 ```
 ## MASKING TRIANGLES
@@ -5665,9 +5387,9 @@ heatmap_plot <- heatmap_plot %>%
 ```{r}
 
 # --- Palette prep (tone down viridis) ---
-library(viridisLite)
-library(colorspace)  # <-- use this for desaturate()
-library(scales)      # for alpha() and squish
+#  library(viridisLite)
+# library(colorspace)  # <-- use this for desaturate()
+# library(scales)      # for alpha() and squish
 
 cols      <- viridisLite::viridis(256, begin = 0.2, end = 0.95)
 soft_cols <- scales::alpha(colorspace::desaturate(cols, amount = 0.1), 0.85) # amount in desaturate() → higher = more muted (e.g., 0.5, 0.7) / alpha alpha(..., 0.85) → lower = lighter (e.g., 0.8).
@@ -5763,14 +5485,18 @@ ggsave("RSC + RSComplex OL late_matrix.tiff",
 
 ### HIPPOCAMPUS + RSC
 
+*******************************************
+CHECK IF THIS ONE WORKS!!! (MUTATE IN SECTIONS 1 AND 2 WITH PASTE)
+************************************************
+
  HC + RSC NOL EARLY
 
 ```{r}
 
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(stringr)
+# library(dplyr)
+# library(tidyr)
+# library(ggplot2)
+# library(stringr)
 
 # --------------------------------
 # 1) Filter + clean strings
@@ -5781,12 +5507,12 @@ heatmapFilter <- long_parsed %>%
     str_detect(raw_name, "nol_new_early_w_nol_new_early_")
   ) %>%
   group_by(ID, ROI, Hall) %>%
-  mutate(
-    # normalize the Hall names to avoid hidden mismatches
-    Hall = str_squish(Hall),
-    Hall = factor(Hall, levels = c("Cue period", "1st hallway", "2nd hallway", "Goal")),
-    ROI  = str_squish(ROI)
-  ) %>%
+  # mutate(
+  #   # normalize the Hall names to avoid hidden mismatches
+  #   Hall = str_squish(Hall),
+  #   Hall = factor(Hall, levels = c("Cue period", "1st hallway", "2nd hallway", "Goal")),
+  #   ROI  = str_squish(ROI)
+  # ) %>%
   ungroup()
 
 # ------------------------------------------------------------
@@ -5794,7 +5520,7 @@ heatmapFilter <- long_parsed %>%
 # ------------------------------------------------------------
 heatmapFilter <- heatmapFilter %>%
   mutate(
-    Condition = str_squish(paste(ROI, Hall))
+    Condition = paste(ROI, Hall) 
   )
 
 # ------------------------------------------------------------
@@ -5914,9 +5640,6 @@ heatmap_df <- as.data.frame(as.table(r_mat)) %>%
 
 # Freeze master copy
 heatmap_master <- heatmap_df
-# Freeze a clean copy
-heatmap_master <- heatmap_df
-
 
 ```
 ## MASKING TRIANGLES
@@ -5981,9 +5704,9 @@ heatmap_plot <- heatmap_plot %>%
 ```{r}
 
 # --- Palette prep (tone down viridis) ---
-library(viridisLite)
-library(colorspace)  # <-- use this for desaturate()
-library(scales)      # for alpha() and squish
+#  library(viridisLite)
+# library(colorspace)  # <-- use this for desaturate()
+# library(scales)      # for alpha() and squish
 
 cols      <- viridisLite::viridis(256, begin = 0.2, end = 0.95)
 soft_cols <- scales::alpha(colorspace::desaturate(cols, amount = 0.1), 0.85) # amount in desaturate() → higher = more muted (e.g., 0.5, 0.7) / alpha alpha(..., 0.85) → lower = lighter (e.g., 0.8).
@@ -6208,8 +5931,6 @@ heatmap_df <- as.data.frame(as.table(r_mat)) %>%
 
 # Freeze master copy
 heatmap_master <- heatmap_df
-# Freeze a clean copy
-heatmap_master <- heatmap_df
 
 
 ```
@@ -6275,9 +5996,9 @@ heatmap_plot <- heatmap_plot %>%
 ```{r}
 
 # --- Palette prep (tone down viridis) ---
-library(viridisLite)
-library(colorspace)  # <-- use this for desaturate()
-library(scales)      # for alpha() and squish
+#  library(viridisLite)
+# library(colorspace)  # <-- use this for desaturate()
+# library(scales)      # for alpha() and squish
 
 cols      <- viridisLite::viridis(256, begin = 0.2, end = 0.95)
 soft_cols <- scales::alpha(colorspace::desaturate(cols, amount = 0.1), 0.85) # amount in desaturate() → higher = more muted (e.g., 0.5, 0.7) / alpha alpha(..., 0.85) → lower = lighter (e.g., 0.8).
@@ -6502,9 +6223,6 @@ heatmap_df <- as.data.frame(as.table(r_mat)) %>%
 
 # Freeze master copy
 heatmap_master <- heatmap_df
-# Freeze a clean copy
-heatmap_master <- heatmap_df
-
 
 ```
 ## MASKING TRIANGLES
@@ -6569,9 +6287,9 @@ heatmap_plot <- heatmap_plot %>%
 ```{r}
 
 # --- Palette prep (tone down viridis) ---
-library(viridisLite)
-library(colorspace)  # <-- use this for desaturate()
-library(scales)      # for alpha() and squish
+#  library(viridisLite)
+# library(colorspace)  # <-- use this for desaturate()
+# library(scales)      # for alpha() and squish
 
 cols      <- viridisLite::viridis(256, begin = 0.2, end = 0.95)
 soft_cols <- scales::alpha(colorspace::desaturate(cols, amount = 0.1), 0.85) # amount in desaturate() → higher = more muted (e.g., 0.5, 0.7) / alpha alpha(..., 0.85) → lower = lighter (e.g., 0.8).
@@ -6805,8 +6523,6 @@ heatmap_df <- as.data.frame(as.table(r_mat)) %>%
 
 # Freeze master copy
 heatmap_master <- heatmap_df
-# Freeze a clean copy
-heatmap_master <- heatmap_df
 
 
 ```
@@ -6872,9 +6588,9 @@ heatmap_plot <- heatmap_plot %>%
 ```{r}
 
 # --- Palette prep (tone down viridis) ---
-library(viridisLite)
-library(colorspace)  # <-- use this for desaturate()
-library(scales)      # for alpha() and squish
+#  library(viridisLite)
+# library(colorspace)  # <-- use this for desaturate()
+# library(scales)      # for alpha() and squish
 
 cols      <- viridisLite::viridis(256, begin = 0.2, end = 0.95)
 soft_cols <- scales::alpha(colorspace::desaturate(cols, amount = 0.1), 0.85) # amount in desaturate() → higher = more muted (e.g., 0.5, 0.7) / alpha alpha(..., 0.85) → lower = lighter (e.g., 0.8).
@@ -7108,9 +6824,6 @@ heatmap_df <- as.data.frame(as.table(r_mat)) %>%
 
 # Freeze master copy
 heatmap_master <- heatmap_df
-# Freeze a clean copy
-heatmap_master <- heatmap_df
-
 
 ```
 ## MASKING TRIANGLES
@@ -7175,9 +6888,9 @@ heatmap_plot <- heatmap_plot %>%
 ```{r}
 
 # --- Palette prep (tone down viridis) ---
-library(viridisLite)
-library(colorspace)  # <-- use this for desaturate()
-library(scales)      # for alpha() and squish
+# library(viridisLite)
+# library(colorspace)  # <-- use this for desaturate()
+# library(scales)      # for alpha() and squish
 
 cols      <- viridisLite::viridis(256, begin = 0.2, end = 0.95)
 soft_cols <- scales::alpha(colorspace::desaturate(cols, amount = 0.1), 0.85) # amount in desaturate() → higher = more muted (e.g., 0.5, 0.7) / alpha alpha(..., 0.85) → lower = lighter (e.g., 0.8).
@@ -7411,9 +7124,6 @@ heatmap_df <- as.data.frame(as.table(r_mat)) %>%
 
 # Freeze master copy
 heatmap_master <- heatmap_df
-# Freeze a clean copy
-heatmap_master <- heatmap_df
-
 
 ```
 ## MASKING TRIANGLES
@@ -7478,9 +7188,9 @@ heatmap_plot <- heatmap_plot %>%
 ```{r}
 
 # --- Palette prep (tone down viridis) ---
-library(viridisLite)
-library(colorspace)  # <-- use this for desaturate()
-library(scales)      # for alpha() and squish
+# library(viridisLite)
+# library(colorspace)  # <-- use this for desaturate()
+# library(scales)      # for alpha() and squish
 
 cols      <- viridisLite::viridis(256, begin = 0.2, end = 0.95)
 soft_cols <- scales::alpha(colorspace::desaturate(cols, amount = 0.1), 0.85) # amount in desaturate() → higher = more muted (e.g., 0.5, 0.7) / alpha alpha(..., 0.85) → lower = lighter (e.g., 0.8).
